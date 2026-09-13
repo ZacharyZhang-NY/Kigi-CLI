@@ -585,6 +585,19 @@ pub fn dup_tui_stderr() -> io::Result<std::fs::File> {
     }
 }
 
+/// Point fd 2 at `/dev/null` for the rest of the process: the terminal stopped reading, so any further stderr write would block.
+pub fn silence_native_stderr() {
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        let Ok(devnull) = std::fs::OpenOptions::new().write(true).open("/dev/null") else {
+            return;
+        };
+        // SAFETY: devnull is a valid descriptor; fd 2 is a valid target.
+        unsafe { libc::dup2(devnull.as_raw_fd(), 2) };
+    }
+}
+
 /// Restore fd 2 to point to the real terminal stderr.
 ///
 /// Call this before exiting so that any final messages (panic output,

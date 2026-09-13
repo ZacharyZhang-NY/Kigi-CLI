@@ -185,6 +185,7 @@ impl AgentView {
             mermaid: None,
             edit_hl: None,
             inline_media_active: false,
+            pending_post_flush: None,
             last_placed_ids: HashSet::new(),
             last_terminal_size: (0, 0),
             terminal_size_stale: false,

@@ -22,10 +22,7 @@ impl AgentView {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
                 // Kitty images outlive the dropped viewer state; clear before close.
-                kigi_shell::util::with_locked_stderr(|stderr| {
-                    let clear = PostFlush::from(overlay::clear_kitty());
-                    let _ = clear.write_to(stderr);
-                });
+                self.queue_post_flush(PostFlush::from(overlay::clear_kitty()));
                 self.image_viewer = None;
                 self.image_load_rx = None;
                 // The viewer's decoded/re-encoded overlay image (tens of MB
@@ -539,10 +536,7 @@ impl AgentView {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => {
                 // Kitty images outlive the dropped viewer state; clear before close.
-                kigi_shell::util::with_locked_stderr(|stderr| {
-                    let clear = PostFlush::from(overlay::clear_kitty());
-                    let _ = clear.write_to(stderr);
-                });
+                self.queue_post_flush(PostFlush::from(overlay::clear_kitty()));
                 self.video_viewer = None;
                 // The viewer's pre-extracted frame set (~50–300 MB for a
                 // typical clip) just dropped; return the pages to the OS.
@@ -569,10 +563,7 @@ impl AgentView {
         match gboom.handle_key(key) {
             crate::gboom::GboomKeyOutcome::Close => {
                 // Kitty images outlive the dropped game state; clear before close.
-                kigi_shell::util::with_locked_stderr(|stderr| {
-                    let clear = PostFlush::from(overlay::clear_kitty());
-                    let _ = clear.write_to(stderr);
-                });
+                self.queue_post_flush(PostFlush::from(overlay::clear_kitty()));
                 self.gboom = None;
             }
             crate::gboom::GboomKeyOutcome::Changed => {}

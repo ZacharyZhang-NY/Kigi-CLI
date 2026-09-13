@@ -463,6 +463,7 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
                     None,
                     wrap_text.as_deref(),
                     None,
+                    &app.escape_writer,
                 );
             let effects = drain_clipboard_target(&target, app);
             maybe_show_x11_primary_paste_hint(

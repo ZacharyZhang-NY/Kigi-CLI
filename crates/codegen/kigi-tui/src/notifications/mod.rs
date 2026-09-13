@@ -42,10 +42,15 @@ pub struct NotificationService {
     /// `true` after the first notification; cleared via
     /// [`clear_permission_notification`] when the queue drains to empty.
     permission_notified: bool,
+    /// Notification, title and progress escapes ride the frame queue (see `EscapeWriter`).
+    escape_writer: crate::render::draw::EscapeWriter,
 }
 
 impl NotificationService {
-    pub fn new(config: NotificationConfig) -> Self {
+    pub fn new(
+        config: NotificationConfig,
+        escape_writer: crate::render::draw::EscapeWriter,
+    ) -> Self {
         let terminal_ctx = crate::terminal::terminal_context();
         let protocol = resolve_protocol(config.method, terminal_ctx);
         let focus_tracker = focus::FocusTracker::new(
@@ -64,6 +69,7 @@ impl NotificationService {
             progress_active: false,
             progress_last_sent: None,
             permission_notified: false,
+            escape_writer,
         }
     }
 
@@ -111,6 +117,7 @@ impl NotificationService {
                 &event.title,
                 &event.body,
                 self.terminal_ctx,
+                &self.escape_writer,
             );
         }
     }
@@ -132,13 +139,7 @@ impl NotificationService {
             self.clear_progress_into(&mut buf);
         }
 
-        if !buf.is_empty() {
-            kigi_shell::util::with_locked_stderr(|stderr| {
-                use std::io::Write;
-                let _ = stderr.write_all(buf.as_bytes());
-                let _ = stderr.flush();
-            });
-        }
+        self.escape_writer.emit(buf);
     }
 
     /// Build escape sequences to set the title and progress bar to idle
@@ -206,22 +207,9 @@ impl NotificationService {
     pub fn shutdown(&mut self) {
         // Reset the tab title back to "kigi" so it doesn't linger on the
         // last activity label after exit.
-        let title_esc = self.title_manager.reset();
-        kigi_shell::util::with_locked_stderr(|stderr| {
-            use std::io::Write as _;
-            let _ = stderr.write_all(title_esc.as_bytes());
-            let _ = stderr.flush();
-        });
-
-        let mut buf = String::new();
+        let mut buf = self.title_manager.reset();
         self.clear_progress_into(&mut buf);
-        if !buf.is_empty() {
-            kigi_shell::util::with_locked_stderr(|stderr| {
-                use std::io::Write as _;
-                let _ = stderr.write_all(buf.as_bytes());
-                let _ = stderr.flush();
-            });
-        }
+        self.escape_writer.emit(buf);
     }
 
     /// Returns `true` if a terminal notification for `ApprovalRequired` has
@@ -281,6 +269,7 @@ impl NotificationService {
             progress_active: false,
             progress_last_sent: None,
             permission_notified: false,
+            escape_writer: crate::render::draw::EscapeWriter::disconnected(),
         }
     }
 }
@@ -659,6 +648,19 @@ mod tests {
         });
         svc.on_tick(&make_title_state(true));
         assert!(!svc.is_progress_active());
+    }
+
+    /// Shutdown escapes ride the writer queue, never an inline stderr write.
+    #[test]
+    fn shutdown_queues_the_title_reset_on_the_writer() {
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let mut svc = NotificationService::new(
+            NotificationConfig::default(),
+            crate::render::draw::EscapeWriter::new(tx, crate::render::draw::WriterSync::new()),
+        );
+        svc.shutdown();
+        let payload = rx.try_recv().expect("shutdown must queue its escapes");
+        assert!(payload.starts_with(b"\x1b]"), "{payload:?}");
     }
 
     #[test]

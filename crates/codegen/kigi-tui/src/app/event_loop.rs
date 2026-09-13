@@ -222,7 +222,7 @@ fn suspend_for_child(
     reader_parked: &std::sync::atomic::AtomicBool,
     input_rx: &mut tokio::sync::mpsc::UnboundedReceiver<crossterm::event::Event>,
     run_child: impl FnOnce(),
-) -> Option<(u16, u16)> {
+) -> std::io::Result<Option<(u16, u16)>> {
     use std::sync::atomic::Ordering;
     // Pause the reader thread, then wait for a FRESH park (reader provably out of
     // crossterm) so the main thread is the sole poll/read caller; bounded so a
@@ -237,8 +237,13 @@ fn suspend_for_child(
     // fullscreen, before LeaveAlternateScreen below — mirroring teardown's
     // "no late frame after LeaveAlternateScreen" drain). Bounded like the
     // reader park so a wedged pty can't hang the suspend.
+    // The alt-screen writes below take the stderr lock a parked writer still holds: abort instead.
     if !writer_sync.wait_drained(Duration::from_millis(750)) {
-        tracing::warn!("suspend: frame writer not drained within 750ms; proceeding");
+        input_paused.store(false, Ordering::Release);
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "terminal writer did not drain before suspend",
+        ));
     }
     // Pre-child cursor probe (minimal only — minimal's startup already proved
     // this terminal answers CPR). Reader is parked, so the reply is ours.
@@ -274,7 +279,7 @@ fn suspend_for_child(
     // lands in the channel, not the tty.
     while input_rx.try_recv().is_ok() {}
     input_paused.store(false, Ordering::Release);
-    moved_cursor
+    Ok(moved_cursor)
 }
 
 /// Restore the inline/minimal live region after a tty-taking child exited.
@@ -351,7 +356,7 @@ fn run_pending_suspends(
             .or_else(|_| std::env::var("EDITOR"))
             .unwrap_or_else(|_| "vi".to_string());
         let writer_sync = terminal.backend_mut().writer_mut().writer_sync().clone();
-        let moved_cursor = suspend_for_child(
+        let moved_cursor = match suspend_for_child(
             app.screen_mode,
             &writer_sync,
             input_paused,
@@ -360,7 +365,15 @@ fn run_pending_suspends(
             || {
                 let _ = std::process::Command::new(&editor).arg(&path).status();
             },
-        );
+        ) {
+            Ok(moved) => moved,
+            Err(error) => {
+                tracing::warn!(%error, "editor suspend skipped");
+                app.pending_agents_modal_refresh = None;
+                app.show_toast("Editor not opened: the terminal is not draining output");
+                return;
+            }
+        };
         if let Some(tab) = app.pending_agents_modal_refresh.take()
             && let ActiveView::Agent(id) = app.active_view
             && let Some(agent) = app.agents.get_mut(&id)
@@ -387,7 +400,7 @@ fn run_pending_suspends(
             .filter(|p| !p.trim().is_empty())
             .unwrap_or_else(|| "less".to_string());
         let writer_sync = terminal.backend_mut().writer_mut().writer_sync().clone();
-        let moved_cursor = suspend_for_child(
+        let moved_cursor = match suspend_for_child(
             app.screen_mode,
             &writer_sync,
             input_paused,
@@ -431,7 +444,15 @@ fn run_pending_suspends(
                         .status();
                 }
             },
-        );
+        ) {
+            Ok(moved) => moved,
+            Err(error) => {
+                tracing::warn!(%error, "pager suspend skipped");
+                let _ = std::fs::remove_file(&path);
+                app.show_toast("Transcript not opened: the terminal is not draining output");
+                return;
+            }
+        };
         let _ = std::fs::remove_file(&path);
         // The pager owned the screen; re-anchor if it printed inline (cat) and
         // repaint the full viewport rather than diffing against a screen state
@@ -492,6 +513,7 @@ pub(crate) async fn run(
     // poll the leader roster (see the roster-poll arm below).
     app.leader_mode = connection.leader_status_rx.is_some();
     app.screen_mode = term_state.screen_mode;
+    app.escape_writer = terminal.backend_mut().writer().escape_writer();
     // Agent/dashboard prompts pick the mode up at their creation sites
     // (`apply_app_scoped_gates` / `ensure_dashboard_state`); the welcome prompt
     // already exists, so inject here.
@@ -737,12 +759,15 @@ pub(crate) async fn run(
         cursor: compat.cursor.sessions,
     };
 
-    // Load notification config from [ui.notifications] in config.toml.
-    if let Some(ref raw) = effective_config {
-        app.notification_service = crate::notifications::NotificationService::new(
-            crate::notifications::load_notification_config(raw),
-        );
-    }
+    // Load notification config from [ui.notifications] in config.toml; the
+    // service always gets the live escape writer, never AppView::new's stub.
+    app.notification_service = crate::notifications::NotificationService::new(
+        effective_config
+            .as_ref()
+            .map(crate::notifications::load_notification_config)
+            .unwrap_or_default(),
+        app.escape_writer.clone(),
+    );
 
     // Full layered resolve (env/requirements/remote may beat plain `[ui]`).
     crate::appearance::cache::set_show_thinking_blocks(
@@ -1378,7 +1403,7 @@ pub(crate) async fn run(
         let want_gboom_keyboard = app.gboom_active();
         if want_gboom_keyboard {
             if !gboom_keyboard_pushed {
-                super::push_gboom_keyboard_flags();
+                super::push_gboom_keyboard_flags(&app.escape_writer);
                 gboom_keyboard_pushed = true;
             }
             // Only the active game receives release events; any other open
@@ -1386,7 +1411,7 @@ pub(crate) async fn run(
             // no key down when reopened after a tab/view switch.
             app.gboom_release_backgrounded_games();
         } else if gboom_keyboard_pushed {
-            super::pop_gboom_keyboard_flags();
+            super::pop_gboom_keyboard_flags(&app.escape_writer);
             gboom_keyboard_pushed = false;
             // No game is the active input target now (switched to a non-game
             // view); clear every game's holds for the same reason.

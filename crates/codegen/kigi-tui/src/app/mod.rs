@@ -73,23 +73,19 @@ static GBOOM_KEYBOARD_PUSHED: AtomicBool = AtomicBool::new(false);
 /// release events — required to track several keys held at once. No-op
 /// unless the Kitty keyboard protocol is active. Balanced by
 /// [`pop_gboom_keyboard_flags`] (and by `restore_terminal` on teardown).
-pub(crate) fn push_gboom_keyboard_flags() {
+pub(crate) fn push_gboom_keyboard_flags(writer: &crate::render::draw::EscapeWriter) {
     if !kitty_flags_pushed() || GBOOM_KEYBOARD_PUSHED.swap(true, Ordering::AcqRel) {
         return;
     }
     let flags = event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
         | event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
         | event::KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES;
-    kigi_shell::util::with_locked_stderr(|stderr| {
-        let _ = execute!(stderr, event::PushKeyboardEnhancementFlags(flags));
-    });
+    writer.emit_command(event::PushKeyboardEnhancementFlags(flags));
 }
 /// Pop the extra keyboard layer pushed by [`push_gboom_keyboard_flags`].
-pub(crate) fn pop_gboom_keyboard_flags() {
+pub(crate) fn pop_gboom_keyboard_flags(writer: &crate::render::draw::EscapeWriter) {
     if GBOOM_KEYBOARD_PUSHED.swap(false, Ordering::AcqRel) {
-        kigi_shell::util::with_locked_stderr(|stderr| {
-            let _ = execute!(stderr, event::PopKeyboardEnhancementFlags);
-        });
+        writer.emit_command(event::PopKeyboardEnhancementFlags);
     }
 }
 /// Tracks whether mouse capture (the five DEC modes enabled by
@@ -175,6 +171,7 @@ pub(crate) const MOUSE_OFF_HINT_PROMPT: &str =
 /// `write()` to stderr / the pty fd, keeping the tokio event loop free
 /// from pty back-pressure (e.g. when Ghostty is busy with another pane).
 pub use crate::render::draw::PagerTerminal;
+use crate::render::draw::WriterJoin;
 /// Whether the pager uses the alternate screen (fullscreen) or stays inline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ScreenMode {
@@ -305,14 +302,19 @@ fn resolve_hunk_tracker_mode(
 /// pager skips the welcome screen and immediately loads that session (replaying
 /// its history). Sessions not found locally are restored from remote storage.
 ///
-/// Returns `Ok(true)` when the user accepted a pending update. The caller
-/// should print a message telling the user to relaunch `kigi`.
+/// How the pager exited: whether the user accepted a pending update (the
+/// caller relaunches `kigi`) and whether the terminal was still reading at
+/// teardown (when not, further terminal output must be skipped).
+pub struct RunExit {
+    pub quit_for_update: bool,
+    pub terminal_reading: bool,
+}
 pub async fn run(
     args: PagerArgs,
     bg_update_rx: Option<
         tokio::sync::oneshot::Receiver<Option<kigi_update::auto_update::UpdateAvailable>>,
     >,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<RunExit> {
     kigi_tty_utils::redirect_native_stderr();
     let screen_mode_override = screen_mode_relaunch::take_screen_mode_env_override();
     let cancel = CancellationToken::new();
@@ -580,33 +582,58 @@ pub async fn run(
     )
     .await;
     crate::unified_log::flush_blocking().await;
-    let _ = restore_terminal(terminal, writer_thread, screen_mode);
+    // After a timed-out writer join the terminal is not reading: exit hints would block on stderr.
+    let terminal_reading = !matches!(
+        restore_terminal(terminal, writer_thread, screen_mode),
+        Ok(WriterJoin::TimedOut)
+    );
     cancel.cancel();
     kigi_tty_utils::global_process_scope().kill_all();
     match result {
         Ok(run_result) => {
             if run_result.quit_for_update {
-                return Ok(true);
+                return Ok(RunExit {
+                    quit_for_update: true,
+                    terminal_reading,
+                });
             }
             if let Some(relaunch) = run_result.relaunch.as_ref() {
+                if !terminal_reading {
+                    // The replacement would inherit a silenced stderr and never show.
+                    tracing::warn!("screen-mode relaunch skipped: the terminal stopped reading");
+                    return Ok(RunExit {
+                        quit_for_update: false,
+                        terminal_reading,
+                    });
+                }
                 if let Err(e) = screen_mode_relaunch::exec_screen_mode_relaunch(
                     &relaunch.session_id,
                     relaunch.minimal,
                 ) {
                     tracing::error!(error = % e, "screen-mode relaunch failed");
-                    print_relaunch_failure_hint(
-                        &e,
-                        &relaunch.session_id,
-                        relaunch.minimal,
-                        &mut io::stderr(),
-                    );
+                    if terminal_reading {
+                        print_relaunch_failure_hint(
+                            &e,
+                            &relaunch.session_id,
+                            relaunch.minimal,
+                            &mut io::stderr(),
+                        );
+                    }
                 }
-                return Ok(false);
+                return Ok(RunExit {
+                    quit_for_update: false,
+                    terminal_reading,
+                });
             }
-            if let Some(info) = run_result.exit_info {
+            if let Some(info) = run_result.exit_info
+                && terminal_reading
+            {
                 print_exit_resume_hint(&info.session_id, info.minimal, &mut io::stderr());
             }
-            Ok(false)
+            Ok(RunExit {
+                quit_for_update: false,
+                terminal_reading,
+            })
         }
         Err(e) => Err(e),
     }
@@ -1065,15 +1092,23 @@ fn init_terminal(
         kigi_crash_handler::disable_terminal_escape_restore();
     })
 }
-/// Drop the terminal (closing the writer mpsc channel) and join the
-/// writer thread. After this returns, subsequent direct stderr writes
-/// are guaranteed to land strictly after every queued frame.
+/// Drop the terminal and join the writer within `WRITER_JOIN_GRACE`; after `TimedOut` the writer may still hold the stderr lock, so callers must not take it unbounded.
 fn drain_writer_thread_before_teardown(
     terminal: PagerTerminal,
     writer_thread: crate::render::draw::WriterThread,
-) {
+) -> WriterJoin {
     drop(terminal);
-    writer_thread.join();
+    let join = writer_thread.join_within(crate::render::draw::WRITER_JOIN_GRACE);
+    if join == WriterJoin::TimedOut {
+        crate::unified_log::warn(
+            "term.writer.join_timeout",
+            None,
+            Some(serde_json::json!({
+                "grace_ms": crate::render::draw::WRITER_JOIN_GRACE.as_millis() as u64
+            })),
+        );
+    }
+    join
 }
 /// Inline teardown escape sequences in the canonical order, shared by
 /// `restore_terminal` and `set_panic_hook` so the on-wire byte order is
@@ -1104,7 +1139,12 @@ fn emit_terminal_teardown_sequences(mode: ScreenMode, inline_cursor_row: Option<
     kigi_shell::util::with_locked_stderr(|stderr| {
         let _ = execute!(stderr, event::DisableFocusChange);
     });
-    pop_gboom_keyboard_flags();
+    // Teardown runs after the writer is gone, so this pop is inline.
+    if GBOOM_KEYBOARD_PUSHED.swap(false, Ordering::AcqRel) {
+        kigi_shell::util::with_locked_stderr(|stderr| {
+            let _ = execute!(stderr, event::PopKeyboardEnhancementFlags);
+        });
+    }
     if crate::terminal::take_kitty_flags_pushed() {
         kigi_shell::util::with_locked_stderr(|stderr| {
             let _ = execute!(stderr, event::PopKeyboardEnhancementFlags);
@@ -1134,15 +1174,57 @@ fn emit_terminal_teardown_sequences(mode: ScreenMode, inline_cursor_row: Option<
     #[cfg(windows)]
     win_native_selection::restore_stdin_mode();
 }
-/// Consumes `terminal` and `writer_thread`: queues a final clear in
-/// fullscreen mode, drains the writer thread, then emits the inline
-/// teardown sequences. The drain ordering guarantees no late frame can
-/// land after `LeaveAlternateScreen`.
+/// Bound on teardown writes when the stderr lock may be wedged (panic hook; a timed-out writer join).
+const TEARDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+/// Run a best-effort teardown on a helper thread for at most `grace`; on timeout it is detached (the process is exiting), inline if no thread can spawn.
+fn run_bounded_teardown(f: impl FnOnce() + Send + 'static, grace: std::time::Duration) -> bool {
+    let slot = std::sync::Arc::new(parking_lot::Mutex::new(Some(f)));
+    let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+    let worker_slot = std::sync::Arc::clone(&slot);
+    let spawned = std::thread::Builder::new()
+        .name("bounded-teardown".into())
+        .spawn(move || {
+            if let Some(f) = worker_slot.lock().take() {
+                f();
+            }
+            let _ = done_tx.send(());
+        });
+    match spawned {
+        Ok(_) => done_rx.recv_timeout(grace).is_ok(),
+        Err(_) => {
+            if let Some(f) = slot.lock().take() {
+                f();
+            }
+            true
+        }
+    }
+}
+/// Clear (fullscreen), drain the writer, then emit the teardown sequences; `TimedOut` means the terminal is not reading and further stderr writes may block.
 fn restore_terminal(
+    terminal: PagerTerminal,
+    writer_thread: crate::render::draw::WriterThread,
+    mode: ScreenMode,
+) -> io::Result<WriterJoin> {
+    let join = restore_terminal_with(
+        terminal,
+        writer_thread,
+        mode,
+        drain_writer_thread_before_teardown,
+        emit_terminal_teardown_sequences,
+    )?;
+    if join == WriterJoin::TimedOut {
+        // Later exit output (hints, relaunch notice, update result, error report) must not block on a stalled tty.
+        kigi_tty_utils::silence_native_stderr();
+    }
+    Ok(join)
+}
+fn restore_terminal_with(
     mut terminal: PagerTerminal,
     writer_thread: crate::render::draw::WriterThread,
     mode: ScreenMode,
-) -> io::Result<()> {
+    drain: impl FnOnce(PagerTerminal, crate::render::draw::WriterThread) -> WriterJoin,
+    teardown: impl FnOnce(ScreenMode, Option<u16>) + Send + 'static,
+) -> io::Result<WriterJoin> {
     if mode.is_fullscreen() {
         let _ = terminal.clear();
         {
@@ -1151,14 +1233,24 @@ fn restore_terminal(
         }
     }
     let inline_cursor_row = (!mode.is_fullscreen()).then(|| terminal.viewport_area().bottom());
-    drain_writer_thread_before_teardown(terminal, writer_thread);
-    emit_terminal_teardown_sequences(mode, inline_cursor_row);
+    let join = drain(terminal, writer_thread);
+    // A clean join proves past writes landed, not that the terminal still reads: every teardown write is bounded.
+    let torn_down = run_bounded_teardown(move || teardown(mode, inline_cursor_row), TEARDOWN_GRACE);
+    if !torn_down {
+        tracing::warn!(
+            grace_ms = TEARDOWN_GRACE.as_millis() as u64,
+            "terminal teardown did not finish in time; detaching"
+        );
+    }
     drain_pending_events_with_timeout(std::time::Duration::from_millis(10));
     let _ = terminal::disable_raw_mode();
     signal_handler::mark_restored();
     kigi_crash_handler::disable_terminal_escape_restore();
     kigi_tty_utils::restore_native_stderr();
-    Ok(())
+    if join == WriterJoin::TimedOut || !torn_down {
+        return Ok(WriterJoin::TimedOut);
+    }
+    Ok(WriterJoin::Joined)
 }
 pub(crate) fn set_terminal_title(title: &str) {
     let full = terminal_title_string(title);
@@ -1183,18 +1275,88 @@ fn terminal_title_string(title: &str) -> String {
 fn set_panic_hook(mode: ScreenMode) {
     let hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
-        emit_terminal_teardown_sequences(mode, None);
+        // The writer thread may hold the stderr lock in a blocked tty write.
+        let torn_down = run_bounded_teardown(
+            move || emit_terminal_teardown_sequences(mode, None),
+            TEARDOWN_GRACE,
+        );
         let _ = terminal::disable_raw_mode();
         signal_handler::mark_restored();
         kigi_crash_handler::disable_terminal_escape_restore();
         kigi_tty_utils::restore_native_stderr();
         kigi_tty_utils::global_process_scope().kill_all();
+        if !torn_down {
+            // The previous hook prints to stderr, which is not reading; keep the log report only.
+            kigi_tty_utils::silence_native_stderr();
+            tracing::error!(panic = %info, "process panicked while the terminal was stalled");
+            return;
+        }
         hook(info);
     }));
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn test_terminal_and_writer_thread() -> (PagerTerminal, crate::render::draw::WriterThread) {
+        let (frame_tx, writer_sync, writer_thread) = crate::render::draw::spawn_writer_thread();
+        let backend =
+            CrosstermBackend::new(crate::render::draw::TermWriter::new(frame_tx, writer_sync));
+        let terminal = kigi_ratatui_inline::Terminal::with_options(
+            backend,
+            ratatui::TerminalOptions {
+                viewport: ratatui::Viewport::Fixed(ratatui::layout::Rect::new(0, 0, 80, 10)),
+            },
+        )
+        .expect("fixed-viewport terminal");
+        (terminal, writer_thread)
+    }
+    /// After a timed-out writer join the teardown must be bounded: the writer may hold the stderr lock.
+    #[test]
+    fn restore_bounds_teardown_after_a_timed_out_writer_join() {
+        let (terminal, writer_thread) = test_terminal_and_writer_thread();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let started = std::time::Instant::now();
+        let result = restore_terminal_with(
+            terminal,
+            writer_thread,
+            ScreenMode::Inline,
+            |terminal, writer_thread| {
+                drop(terminal);
+                drop(writer_thread);
+                WriterJoin::TimedOut
+            },
+            move |_, _| {
+                let _ = release_rx.recv();
+            },
+        );
+        assert_eq!(result.expect("restore"), WriterJoin::TimedOut);
+        assert!(
+            started.elapsed() < TEARDOWN_GRACE + std::time::Duration::from_secs(5),
+            "teardown must be detached at the grace deadline"
+        );
+        let _ = release_tx.send(());
+    }
+    /// A clean join followed by a teardown that never returns still reports a stalled terminal.
+    #[test]
+    fn restore_reports_a_stalled_terminal_when_teardown_times_out_after_a_clean_join() {
+        let (terminal, writer_thread) = test_terminal_and_writer_thread();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let result = restore_terminal_with(
+            terminal,
+            writer_thread,
+            ScreenMode::Inline,
+            |terminal, writer_thread| {
+                drop(terminal);
+                drop(writer_thread);
+                WriterJoin::Joined
+            },
+            move |_, _| {
+                let _ = release_rx.recv();
+            },
+        );
+        assert_eq!(result.expect("restore"), WriterJoin::TimedOut);
+        let _ = release_tx.send(());
+    }
     /// `[ui].cursor_blink` tri-state → startup cursor policy; the `None`
     /// default must be Inherit (emit nothing).
     #[test]

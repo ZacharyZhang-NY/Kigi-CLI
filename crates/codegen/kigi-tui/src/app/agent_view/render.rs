@@ -605,12 +605,31 @@ impl AgentView {
                 false,
                 &mut Vec::new(),
             );
-            child_post_flush = post_flush;
+            // The child's own queued clears (inline image ids) go out before its frame escapes.
+            child_post_flush = match (child_view.take_pending_post_flush(), post_flush) {
+                (Some(mut pending), Some(frame)) => {
+                    pending.append(frame);
+                    Some(pending)
+                }
+                (pending, frame) => pending.or(frame),
+            };
         }
         (None, child_post_flush)
     }
     pub fn should_show_tip(&mut self) -> bool {
         false
+    }
+    /// Queue escapes for the frame's post-flush write: the event loop never writes stderr inline.
+    pub(crate) fn queue_post_flush(&mut self, escapes: crate::terminal::overlay::PostFlush) {
+        match self.pending_post_flush.as_mut() {
+            Some(pending) => pending.append(escapes),
+            None => self.pending_post_flush = Some(escapes),
+        }
+    }
+    pub(crate) fn take_pending_post_flush(
+        &mut self,
+    ) -> Option<crate::terminal::overlay::PostFlush> {
+        self.pending_post_flush.take()
     }
     /// `area` is the screen region assigned to this agent view.
     /// When a tracing overlay is visible, this is smaller than `f.area()`.
@@ -669,20 +688,17 @@ impl AgentView {
                 || self.active_modal.is_some())
         {
             self.inline_media_active = false;
-            kigi_shell::util::with_locked_stderr(|stderr| {
-                for &id in self.inline_media_ids.values() {
-                    let clear = crate::terminal::image::clear_kitty_image(id);
-                    let _ = std::io::Write::write_all(stderr, clear.as_bytes());
-                }
-            });
+            let mut clears = String::new();
+            for &id in self.inline_media_ids.values() {
+                clears.push_str(&crate::terminal::image::clear_kitty_image(id));
+            }
+            self.queue_post_flush(crate::terminal::overlay::PostFlush::plain(clears));
             self.inline_media_ids.clear();
             self.inline_media_iterm_emitted.clear();
         }
         if let Some(ref child_sid) = self.active_subagent.clone() {
             if let Some(esc) = self.take_own_inline_media_clear_escapes() {
-                kigi_shell::util::with_locked_stderr(|stderr| {
-                    let _ = std::io::Write::write_all(stderr, esc.as_bytes());
-                });
+                self.queue_post_flush(crate::terminal::overlay::PostFlush::plain(esc));
             }
             return self.draw_subagent_fullscreen(
                 &child_sid.clone(),
@@ -695,9 +711,7 @@ impl AgentView {
             );
         }
         if let Some(esc) = self.take_subagent_inline_media_clear_escapes() {
-            kigi_shell::util::with_locked_stderr(|stderr| {
-                let _ = std::io::Write::write_all(stderr, esc.as_bytes());
-            });
+            self.queue_post_flush(crate::terminal::overlay::PostFlush::plain(esc));
         }
         let appearance = self.scrollback.appearance().clone();
         let layout_cfg = &appearance.scrollback.layout;

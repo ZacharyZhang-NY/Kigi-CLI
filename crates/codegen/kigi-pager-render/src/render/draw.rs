@@ -146,6 +146,10 @@ impl TermWriter {
     pub fn writer_sync(&self) -> &WriterSync {
         &self.sync
     }
+    /// A cloneable handle onto this writer's queue for out-of-band escapes.
+    pub fn escape_writer(&self) -> EscapeWriter {
+        EscapeWriter::new(self.tx.clone(), self.sync.clone())
+    }
 }
 impl Write for TermWriter {
     fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
@@ -166,6 +170,56 @@ impl Drop for TermWriter {
         let _ = self.flush();
     }
 }
+/// Out-of-band escapes ride the frame queue (an inline stderr write deadlocks on a stalled tty); drop every clone before `join_within`.
+#[derive(Clone)]
+pub struct EscapeWriter {
+    tx: mpsc::Sender<Vec<u8>>,
+    sync: WriterSync,
+}
+impl EscapeWriter {
+    pub fn new(tx: mpsc::Sender<Vec<u8>>, sync: WriterSync) -> Self {
+        Self { tx, sync }
+    }
+    /// No writer thread behind it: sends are dropped. For tests and views built before the terminal exists.
+    pub fn disconnected() -> Self {
+        let (tx, _rx) = mpsc::channel::<Vec<u8>>();
+        Self {
+            tx,
+            sync: WriterSync::new(),
+        }
+    }
+    /// Never blocks; covered by [`WriterSync::wait_drained`].
+    pub fn emit(&self, bytes: impl Into<Vec<u8>>) {
+        let data: Vec<u8> = bytes.into();
+        if data.is_empty() {
+            return;
+        }
+        self.sync.mark_queued();
+        let _ = self.tx.send(data);
+    }
+    /// Winapi-only commands run synchronously: a console API call, not a tty write.
+    pub fn emit_command(&self, command: impl crossterm::Command) {
+        #[cfg(windows)]
+        if !command.is_ansi_code_supported() {
+            let _ = command.execute_winapi();
+            return;
+        }
+        let mut ansi = String::new();
+        if command.write_ansi(&mut ansi).is_ok() {
+            self.emit(ansi);
+        }
+    }
+}
+/// Outcome of [`WriterThread::join_within`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriterJoin {
+    /// The thread drained its queue and exited.
+    Joined,
+    /// Still running at the deadline (tty blocked, or a sender alive); detached.
+    TimedOut,
+}
+/// Teardown waits this long for the writer thread before detaching it, so a stalled tty cannot hang `/quit`.
+pub const WRITER_JOIN_GRACE: Duration = Duration::from_secs(2);
 /// Handle for the background writer thread.
 ///
 /// Joining ensures all queued frames have been written to the terminal
@@ -174,19 +228,45 @@ pub struct WriterThread {
     handle: Option<std::thread::JoinHandle<()>>,
 }
 impl WriterThread {
-    /// Block until the writer thread has processed all pending frames and
-    /// exited. The [`mpsc::Sender`] must be dropped *before* calling this,
-    /// otherwise the thread will never see the channel close.
-    pub fn join(mut self) {
-        if let Some(h) = self.handle.take() {
-            let _ = h.join();
+    /// Wait up to `grace` for the thread to drain and exit, else detach it; every sender (`EscapeWriter` clones too) must be dropped first.
+    pub fn join_within(mut self, grace: Duration) -> WriterJoin {
+        let Some(handle) = self.handle.take() else {
+            return WriterJoin::Joined;
+        };
+        if wait_finished(&handle, grace) {
+            let _ = handle.join();
+            WriterJoin::Joined
+        } else {
+            tracing::warn!(
+                grace_ms = grace.as_millis() as u64,
+                "term-writer thread still running at teardown; detaching"
+            );
+            WriterJoin::TimedOut
+        }
+    }
+    #[cfg(test)]
+    fn for_test(handle: std::thread::JoinHandle<()>) -> Self {
+        Self {
+            handle: Some(handle),
         }
     }
 }
+fn wait_finished(handle: &std::thread::JoinHandle<()>, grace: Duration) -> bool {
+    let deadline = Instant::now() + grace;
+    while !handle.is_finished() {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    true
+}
 impl Drop for WriterThread {
     fn drop(&mut self) {
-        if let Some(h) = self.handle.take() {
-            let _ = h.join();
+        if let Some(handle) = self.handle.take()
+            && wait_finished(&handle, WRITER_JOIN_GRACE)
+        {
+            let _ = handle.join();
         }
     }
 }
@@ -197,7 +277,7 @@ impl Drop for WriterThread {
 /// `BufWriter`. The [`WriterSync`] must be shared with every [`TermWriter`]
 /// built on the sender so [`WriterSync::wait_drained`] tracks the queue.
 /// Drop the sender to signal the thread to exit, then call
-/// [`WriterThread::join`] to wait for it.
+/// [`WriterThread::join_within`] to wait for it.
 pub fn spawn_writer_thread() -> (mpsc::Sender<Vec<u8>>, WriterSync, WriterThread) {
     let (tx, rx) = mpsc::channel::<Vec<u8>>();
     let sync = WriterSync::new();
@@ -568,6 +648,49 @@ mod tests {
             std::str::from_utf8(&captured).unwrap(),
             test_payload,
             "Round-tripped bytes do not decode to original UTF-8 string"
+        );
+    }
+    /// Frames and escapes share one queue, so the writer sees them in call order.
+    #[test]
+    #[cfg(not(windows))]
+    fn escapes_share_the_frame_queue_in_call_order() {
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+        let sync = WriterSync::new();
+        let mut frames = TermWriter::new(tx, sync.clone());
+        let escapes = frames.escape_writer();
+        frames.write_all(b"frame-1").unwrap();
+        frames.flush().unwrap();
+        escapes.emit("\x1b[?1000h");
+        frames.write_all(b"frame-2").unwrap();
+        frames.flush().unwrap();
+        escapes.emit_command(crossterm::event::DisableMouseCapture);
+        let payloads: Vec<Vec<u8>> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert_eq!(payloads.len(), 4);
+        assert_eq!(payloads[0], b"frame-1");
+        assert_eq!(payloads[1], b"\x1b[?1000h");
+        assert_eq!(payloads[2], b"frame-2");
+        assert!(payloads[3].starts_with(b"\x1b["), "{:?}", payloads[3]);
+        assert!(!sync.is_drained(), "four payloads queued, none written");
+    }
+    /// A writer thread parked in a blocked tty write must not hang teardown.
+    #[test]
+    fn join_within_times_out_on_a_stuck_writer_thread() {
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let handle = std::thread::spawn(move || {
+            let _ = release_rx.recv();
+        });
+        let started = Instant::now();
+        let outcome = WriterThread::for_test(handle).join_within(Duration::from_millis(50));
+        assert_eq!(outcome, WriterJoin::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        let _ = release_tx.send(());
+    }
+    #[test]
+    fn join_within_joins_a_finished_writer_thread() {
+        let handle = std::thread::spawn(|| {});
+        assert_eq!(
+            WriterThread::for_test(handle).join_within(Duration::from_secs(5)),
+            WriterJoin::Joined
         );
     }
 }

@@ -1003,6 +1003,8 @@ pub struct AgentView {
     pub(crate) edit_hl: Option<crate::app::edit_highlight_worker::EditHlRuntime>,
     /// Whether any inline media is currently placed on screen.
     pub(crate) inline_media_active: bool,
+    /// Escapes queued for the next frame's post-flush write (see `queue_post_flush`).
+    pub(crate) pending_post_flush: Option<crate::terminal::overlay::PostFlush>,
     /// Image IDs that were placed on screen last frame. Used to detect
     /// images that scrolled off and need their Kitty placements cleared.
     pub(crate) last_placed_ids: HashSet<u32>,

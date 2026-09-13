@@ -56,13 +56,18 @@ pub fn maybe_request_wrap_host_image(
     local_image: Option<&ImageData>,
     local_text: Option<&str>,
     local_file_urls: Option<&str>,
+    writer: &crate::render::draw::EscapeWriter,
 ) -> bool {
     maybe_request_wrap_host_image_with(
         osc52_sink_active(),
         local_image,
         local_text,
         local_file_urls,
-        write_request_osc,
+        || {
+            // The reply arrives as a paste event; the request is queued, never an inline write.
+            writer.emit(request_osc_bytes());
+            Ok(())
+        },
     )
 }
 
@@ -81,14 +86,6 @@ fn maybe_request_wrap_host_image_with(
         return false;
     }
     emit().is_ok()
-}
-
-fn write_request_osc() -> std::io::Result<()> {
-    use std::io::Write;
-    kigi_shell::util::with_locked_stderr(|stderr| {
-        stderr.write_all(&request_osc_bytes())?;
-        stderr.flush()
-    })
 }
 
 /// Decode wrap host-image paste content (`Event::Paste` payload).

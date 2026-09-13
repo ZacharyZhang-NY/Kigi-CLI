@@ -506,13 +506,14 @@ pub(in crate::app::dispatch) fn dispatch_toggle_mouse_capture(app: &mut AppView)
             "active_view": format!("{:?}", app.active_view),
         })),
     );
-    kigi_shell::util::with_locked_stderr(|stderr| {
-        let _ = if enable {
-            crossterm::execute!(stderr, crossterm::event::EnableMouseCapture)
-        } else {
-            crossterm::execute!(stderr, crossterm::event::DisableMouseCapture)
-        };
-    });
+    // Through the writer queue, never inline: see EscapeWriter.
+    if enable {
+        app.escape_writer
+            .emit_command(crossterm::event::EnableMouseCapture);
+    } else {
+        app.escape_writer
+            .emit_command(crossterm::event::DisableMouseCapture);
+    }
     // On legacy conhost, DisableMouseCapture restores the *pre-capture* stdin
     // mode, which may itself have QuickEdit off (per-window profile or a
     // stale mode from a crashed run) — assert it so "mouse off" actually

@@ -1596,16 +1596,21 @@ async fn async_main() -> Result<()> {
     let result = kigi_tui::app::run(args, bg_update_rx).await;
     kigi_sandbox::flush();
     match result {
-        Ok(true) => {
+        Ok(exit) if exit.quit_for_update => {
             let adopted = bg_update_wait.lock().await.take();
-            if finish_update_on_exit(adopted, &update_config).await {
-                eprintln!("Update installed. Run `kigi` to start.");
-            } else {
-                eprintln!("Update did not complete. Run `kigi update` to retry.");
+            let installed =
+                finish_update_on_exit(adopted, &update_config, exit.terminal_reading).await;
+            // A terminal that stopped reading at teardown would block these prints.
+            if exit.terminal_reading {
+                if installed {
+                    eprintln!("Update installed. Run `kigi` to start.");
+                } else {
+                    eprintln!("Update did not complete. Run `kigi update` to retry.");
+                }
             }
             Ok(())
         }
-        Ok(false) => Ok(()),
+        Ok(_) => Ok(()),
         Err(e) => Err(e),
     }
 }
@@ -1621,8 +1626,13 @@ async fn async_main() -> Result<()> {
 async fn finish_update_on_exit(
     adopted: Option<tokio::task::JoinHandle<std::io::Result<std::process::ExitStatus>>>,
     update_config: &UpdateConfig,
+    terminal_reading: bool,
 ) -> bool {
     let run_blocking = |reason: Option<String>| async move {
+        // The blocking updater prints and its child inherits stderr: not on a stalled terminal.
+        if !terminal_reading {
+            return false;
+        }
         if let Some(reason) = reason {
             eprintln!("{reason}");
         }
@@ -1636,7 +1646,9 @@ async fn finish_update_on_exit(
     };
     match adopted {
         Some(handle) => {
-            eprintln!("Waiting for the update download to finish...");
+            if terminal_reading {
+                eprintln!("Waiting for the update download to finish...");
+            }
             match handle.await {
                 Ok(Ok(status)) if status.success() => true,
                 Ok(Ok(status)) => {

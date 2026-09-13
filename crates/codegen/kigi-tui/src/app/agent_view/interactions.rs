@@ -1231,6 +1231,17 @@ mod cancel_turn_mouse_tests {
     use crate::views::modal::{CancelTurnChoice, CancelTurnViewState};
     use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
     use ratatui::layout::Rect;
+    #[test]
+    fn queued_post_flush_escapes_drain_in_order() {
+        let mut agent = make_agent();
+        agent.queue_post_flush(crate::terminal::overlay::PostFlush::plain("a".into()));
+        agent.queue_post_flush(crate::terminal::overlay::PostFlush::plain("b".into()));
+        let drained = agent
+            .take_pending_post_flush()
+            .map(|p| p.as_str().to_owned());
+        assert_eq!(drained.as_deref(), Some("ab"));
+        assert!(agent.take_pending_post_flush().is_none());
+    }
     fn make_agent() -> AgentView {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         AgentView::new(

@@ -81,7 +81,10 @@ fn test_app() -> AppView {
         scroll_state: crate::input::mouse::MouseScrollState::default(),
         scroll_config: crate::input::mouse::ScrollConfig::default(),
         appearance: crate::appearance::AppearanceConfig::default(),
-        notification_service: crate::notifications::NotificationService::new(Default::default()),
+        notification_service: crate::notifications::NotificationService::new(
+            Default::default(),
+            crate::render::draw::EscapeWriter::disconnected(),
+        ),
         pending_notification_escapes: None,
         deferred_notification: None,
         tracing_rx: None,
@@ -153,6 +156,7 @@ fn test_app() -> AppView {
         welcome_auth_fallback_rect: None,
         auth_show_raw_url: false,
         auth_mouse_disabled: false,
+        escape_writer: crate::render::draw::EscapeWriter::disconnected(),
         session_picker_entries: None,
         session_picker_loading: false,
         session_picker_state: crate::views::picker::PickerState::with_mode(

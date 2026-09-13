@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::io::Write;
 
 use crate::notifications::tmux;
 use crate::terminal::{MultiplexerKind, TerminalContext, TerminalName};
@@ -68,6 +67,7 @@ pub fn emit_notification(
     title: &str,
     body: &str,
     ctx: &TerminalContext,
+    writer: &crate::render::draw::EscapeWriter,
 ) {
     // For body-only protocols (OSC 9, OSC 99), fold the title (session
     // name) into the body so it's visible.  For OSC 777 (Ghostty), the
@@ -81,23 +81,13 @@ pub fn emit_notification(
         NotificationProtocol::None => return,
     };
 
+    // Notifications fire from the event-loop thread: queued, never an inline stderr write.
     if ctx.is_tmux_backed() {
-        let wrapped = tmux::tmux_passthrough(&sequence);
-        kigi_shell::util::with_locked_stderr(|stderr| {
-            let _ = stderr.write_all(wrapped.as_bytes());
-            let _ = stderr.flush();
-        });
+        writer.emit(tmux::tmux_passthrough(&sequence));
     } else if matches!(protocol, NotificationProtocol::Bel) {
-        kigi_shell::util::with_locked_stderr(|stderr| {
-            let _ = stderr.write_all(BEL_BYTE);
-            let _ = stderr.flush();
-        });
+        writer.emit(BEL_BYTE);
     } else {
-        let bytes = sequence.as_bytes();
-        kigi_shell::util::with_locked_stderr(|stderr| {
-            let _ = stderr.write_all(bytes);
-            let _ = stderr.flush();
-        });
+        writer.emit(sequence.as_bytes());
     }
 }
 
@@ -292,31 +282,61 @@ mod tests {
     #[test]
     fn emit_none_is_noop() {
         let ctx = ctx_with_brand(TerminalName::KigiDesktop);
-        emit_notification(NotificationProtocol::None, "title", "body", &ctx);
+        emit_notification(
+            NotificationProtocol::None,
+            "title",
+            "body",
+            &ctx,
+            &crate::render::draw::EscapeWriter::disconnected(),
+        );
     }
 
     #[test]
     fn emit_bel_does_not_panic() {
         let ctx = ctx_with_brand(TerminalName::Unknown);
-        emit_notification(NotificationProtocol::Bel, "", "", &ctx);
+        emit_notification(
+            NotificationProtocol::Bel,
+            "",
+            "",
+            &ctx,
+            &crate::render::draw::EscapeWriter::disconnected(),
+        );
     }
 
     #[test]
     fn emit_osc9_does_not_panic() {
         let ctx = ctx_with_brand(TerminalName::Iterm2);
-        emit_notification(NotificationProtocol::Osc9, "title", "body", &ctx);
+        emit_notification(
+            NotificationProtocol::Osc9,
+            "title",
+            "body",
+            &ctx,
+            &crate::render::draw::EscapeWriter::disconnected(),
+        );
     }
 
     #[test]
     fn emit_osc99_does_not_panic() {
         let ctx = ctx_with_brand(TerminalName::Kitty);
-        emit_notification(NotificationProtocol::Osc99, "title", "body", &ctx);
+        emit_notification(
+            NotificationProtocol::Osc99,
+            "title",
+            "body",
+            &ctx,
+            &crate::render::draw::EscapeWriter::disconnected(),
+        );
     }
 
     #[test]
     fn emit_osc777_does_not_panic() {
         let ctx = ctx_with_brand(TerminalName::Ghostty);
-        emit_notification(NotificationProtocol::Osc777, "title", "body", &ctx);
+        emit_notification(
+            NotificationProtocol::Osc777,
+            "title",
+            "body",
+            &ctx,
+            &crate::render::draw::EscapeWriter::disconnected(),
+        );
     }
 
     #[test]

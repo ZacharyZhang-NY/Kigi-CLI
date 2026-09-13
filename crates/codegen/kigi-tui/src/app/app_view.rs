@@ -954,6 +954,8 @@ pub struct AppView {
     /// Whether the pager uses fullscreen (alt-screen) or inline mode.
     /// Set from the resolved terminal state at startup.
     pub(crate) screen_mode: super::ScreenMode,
+    /// Out-of-band escapes ride the frame queue, never an inline stderr write.
+    pub(crate) escape_writer: crate::render::draw::EscapeWriter,
     /// Agent Dashboard state. `Some(_)` only when the dashboard view
     /// is active (`active_view == AgentDashboard`) or recently closed.
     /// Held outside the `ActiveView` discriminant because `DashboardState`
@@ -1022,7 +1024,10 @@ impl AppView {
             scroll_state: MouseScrollState::default(),
             scroll_config: ScrollConfig::from_settings(),
             appearance: AppearanceConfig::default(),
-            notification_service: NotificationService::new(Default::default()),
+            notification_service: NotificationService::new(
+                Default::default(),
+                crate::render::draw::EscapeWriter::disconnected(),
+            ),
             pending_notification_escapes: None,
             deferred_notification: None,
             tracing_rx: None,
@@ -1054,6 +1059,7 @@ impl AppView {
             welcome_auth_fallback_rect: None,
             auth_show_raw_url: false,
             auth_mouse_disabled: false,
+            escape_writer: crate::render::draw::EscapeWriter::disconnected(),
             session_picker_entries: None,
             session_picker_loading: false,
             session_picker_state: crate::views::picker::PickerState::with_mode(
@@ -3095,9 +3101,8 @@ impl AppView {
                 .hyperlink_capabilities()
                 .osc22_cursor
             {
-                kigi_shell::util::with_locked_stderr(|stderr| {
-                    let _ = crossterm::execute!(stderr, crate::terminal::SetDefaultCursor);
-                });
+                self.escape_writer
+                    .emit_command(crate::terminal::SetDefaultCursor);
             }
         }
         let want_mouse_off = self.auth_show_raw_url
@@ -3106,17 +3111,15 @@ impl AppView {
             && matches!(self.auth_state, AuthState::Authenticating { .. });
         if want_mouse_off && !self.auth_mouse_disabled {
             self.auth_mouse_disabled = true;
-            kigi_shell::util::with_locked_stderr(|stderr| {
-                let _ = crossterm::execute!(stderr, crossterm::event::DisableMouseCapture);
-            });
+            self.escape_writer
+                .emit_command(crossterm::event::DisableMouseCapture);
             #[cfg(windows)]
             super::win_native_selection::enable_native_selection();
             super::MOUSE_CAPTURE_ENABLED.store(false, std::sync::atomic::Ordering::Release);
         } else if !want_mouse_off && self.auth_mouse_disabled {
             self.auth_mouse_disabled = false;
-            kigi_shell::util::with_locked_stderr(|stderr| {
-                let _ = crossterm::execute!(stderr, crossterm::event::EnableMouseCapture);
-            });
+            self.escape_writer
+                .emit_command(crossterm::event::EnableMouseCapture);
             super::MOUSE_CAPTURE_ENABLED.store(true, std::sync::atomic::Ordering::Release);
             for agent in self.agents.values_mut() {
                 agent.set_sticky_toast_recursive(None);
@@ -3450,6 +3453,8 @@ impl AppView {
                                 panel.render(full_area, f.buffer_mut());
                             }
                             let (cursor_pos, post_flush) = result;
+                            let post_flush =
+                                Self::merge_post_flush(agent.take_pending_post_flush(), post_flush);
                             let has_cloud = false;
                             if has_cloud || self.import_claude_modal.is_some() {
                                 link_spans.clear();
@@ -3505,7 +3510,7 @@ impl AppView {
                                             dashboard,
                                             |inner, buf| {
                                                 if let Some(agent) = agents.get_mut(&agent_id) {
-                                                    agent.draw(
+                                                    let (cursor, post_flush) = agent.draw(
                                                         inner,
                                                         buf,
                                                         registry,
@@ -3517,6 +3522,13 @@ impl AppView {
                                                         bundle_state,
                                                         false,
                                                         link_spans,
+                                                    );
+                                                    (
+                                                        cursor,
+                                                        Self::merge_post_flush(
+                                                            agent.take_pending_post_flush(),
+                                                            post_flush,
+                                                        ),
                                                     )
                                                 } else {
                                                     (None, None)
@@ -4304,7 +4316,10 @@ pub(crate) mod tests {
             scroll_state: MouseScrollState::default(),
             scroll_config: ScrollConfig::default(),
             appearance: AppearanceConfig::default(),
-            notification_service: NotificationService::new(Default::default()),
+            notification_service: NotificationService::new(
+                Default::default(),
+                crate::render::draw::EscapeWriter::disconnected(),
+            ),
             pending_notification_escapes: None,
             deferred_notification: None,
             tracing_rx: None,
@@ -4373,6 +4388,7 @@ pub(crate) mod tests {
             welcome_auth_fallback_rect: None,
             auth_show_raw_url: false,
             auth_mouse_disabled: false,
+            escape_writer: crate::render::draw::EscapeWriter::disconnected(),
             session_picker_entries: None,
             session_picker_loading: false,
             session_picker_state: crate::views::picker::PickerState::with_mode(
