@@ -17,10 +17,18 @@ import) or any `KIMI_*` env var.
 Upstream sync record (update on every sync): fork baseline is upstream
 snapshot `8adf901` (2026-07-16, ≈v0.2.102); bug fixes evaluated and
 selectively ported through upstream `77cd7eb` (2026-08-25, ≈v1.0.10) in
-the 0.1.13 cycle. Upstream is daily "Synced from monorepo" snapshots —
+the 0.1.13 cycle and through `3794978` (2026-09-09, ≈v1.0.24) in the
+0.1.15 cycle. Upstream is daily "Synced from monorepo" snapshots —
 the commit BODIES carry per-change bullet lists, and
 `crates/codegen/xai-grok-shell/changelogs/` maps releases to dates;
 start any future sync from those two, not from raw diffs.
+
+Known limitations left by the 0.1.15 sync (fix before relying on them):
+the Windows frame writer writes through `std::io::stderr`, so a console
+that stops reading still blocks exit-path prints behind std's stderr lock
+(unix silences fd 2 after a timed-out writer join); the bwrap command
+builder re-checks `Path::exists("/data")` and can omit the devbox bind on
+a stat error that the profile classification treated as present.
 
 ## Hard constraints
 
