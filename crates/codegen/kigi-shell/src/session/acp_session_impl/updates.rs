@@ -333,15 +333,24 @@ impl SessionActor {
         if let Err(e) = crate::session::replay_events::flush_replay_actor(&self.event_tx).await {
             tracing::warn!(?e, "flush_replay_actor failed");
         }
+        if let Err(error) = self.persistence_barrier().await {
+            tracing::error!(%error, "persistence flush failed");
+        }
+    }
+    /// The `FlushAndAck` durability barrier: `Ok` only once every prior
+    /// persistence write is on stable media.
+    pub(super) async fn persistence_barrier(&self) -> std::io::Result<()> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         if self
             .notifications
             .persistence_tx
             .send(PersistenceMsg::FlushAndAck { respond_to: tx })
-            .is_ok()
+            .is_err()
         {
-            let _ = rx.await;
+            return Err(std::io::Error::other("persistence actor gone"));
         }
+        rx.await
+            .unwrap_or_else(|_| Err(std::io::Error::other("persistence actor gone")))
     }
     /// Extracts the update type name and relevant parameters for logging
     fn extract_update_info(

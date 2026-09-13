@@ -2794,3 +2794,24 @@ async fn graph_mode_state_round_trips_and_tombstones() {
     let after = adapter.load_session_without_updates(&info).await.unwrap();
     assert!(after.graph_mode_state.is_none(), "cleared graph must not resurrect");
 }
+
+/// The barrier covers nested state files, and an unsyncable one fails it.
+#[cfg(unix)]
+#[tokio::test]
+async fn sync_session_files_reports_a_nested_file_that_cannot_be_synced() {
+    use std::os::unix::fs::PermissionsExt;
+    // Root opens anything; the permission probe is meaningless there.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let dir = TempDir::new().unwrap();
+    let adapter = JsonlStorageAdapter::with_explicit_session_dir(dir.path().to_path_buf());
+    let info = create_test_info();
+    adapter.init_session(&info, default_model_id()).await.unwrap();
+    let nested = adapter.goal_mode_state_file(&info);
+    std::fs::create_dir_all(nested.parent().unwrap()).unwrap();
+    std::fs::write(&nested, b"{}").unwrap();
+    std::fs::set_permissions(&nested, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let error = adapter.sync_session_files(&info).await.unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "got {error}");
+}

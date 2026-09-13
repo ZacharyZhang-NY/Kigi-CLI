@@ -228,12 +228,13 @@ fn read_summary(path: &Path) -> io::Result<Summary> {
 fn write_summary_atomic(summary_path: &Path, summary: &Summary) -> io::Result<()> {
     let bytes = serde_json::to_vec_pretty(summary)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    let tmp = summary_path.with_extension("json.tmp");
-    std::fs::write(&tmp, &bytes)?;
-    // Windows-safe replace: this is the write that persists a session's
-    // CURRENT MODEL — a bare rename made a switched model silently revert
-    // on resume whenever AV/indexer held summary.json open on Windows.
-    crate::util::fs::replace_file(&tmp, summary_path)
+    // Durable and Windows-safe: this write persists a session's CURRENT MODEL,
+    // and other writers (`/rename`) race the persistence barrier on this path.
+    super::write_bytes_atomic(
+        &summary_path.with_extension("json.tmp"),
+        summary_path,
+        &bytes,
+    )
 }
 
 #[cfg(test)]

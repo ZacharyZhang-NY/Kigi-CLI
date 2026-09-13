@@ -334,10 +334,10 @@ pub enum SessionCommand {
     CopyFile {
         respond_to: oneshot::Sender<anyhow::Result<crate::session::persistence::SessionStateCopy>>,
     },
-    /// Flush the replay buffer and persistence, then signal completion.
-    /// Used during reconnect to ensure all buffered content is persisted before replay.
+    /// Flush the replay buffer and persistence, then report the durability
+    /// barrier result. Used during reconnect so replay follows persisted content.
     FlushComplete {
-        respond_to: oneshot::Sender<()>,
+        respond_to: oneshot::Sender<std::io::Result<()>>,
     },
     /// Update MCP servers for an existing session (used during reconnect or
     /// mid-session via the `kigi/session/update_mcp_servers` extension method).

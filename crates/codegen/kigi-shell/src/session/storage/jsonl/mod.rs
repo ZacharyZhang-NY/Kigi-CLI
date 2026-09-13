@@ -86,7 +86,7 @@ impl JsonlStorageAdapter {
     fn updates_file(&self, info: &Info) -> PathBuf {
         self.session_dir(info).join("updates.jsonl")
     }
-    fn chat_file(&self, info: &Info) -> PathBuf {
+    pub(crate) fn chat_file(&self, info: &Info) -> PathBuf {
         self.session_dir(info).join("chat_history.jsonl")
     }
     fn summary_file(&self, info: &Info) -> PathBuf {
@@ -700,7 +700,7 @@ impl JsonlStorageAdapter {
         options: super::CopySessionOptions,
     ) -> io::Result<super::CopySessionResult> {
         let target_dir = self.session_dir(target_info);
-        std::fs::create_dir_all(&target_dir)?;
+        super::create_dir_all_durable(&target_dir)?;
         let source_summary = self.read_summary_sync(source_info)?;
         let chat_format_version = source_summary.chat_format_version;
         let mut chat_to_copy: Vec<ConversationItem> =
@@ -920,7 +920,7 @@ async fn next_compaction_segment_index(compaction_dir: &std::path::Path) -> u64 
 impl StorageAdapter for JsonlStorageAdapter {
     async fn init_session(&self, info: &Info, model_id: acp::ModelId) -> io::Result<Summary> {
         let dir = self.session_dir(info);
-        std::fs::create_dir_all(&dir)?;
+        super::create_dir_all_durable(&dir)?;
         let summary_path = self.summary_file(info);
         if Path::new(&summary_path).exists() {
             tracing::info!("Loading existing session from JSONL");
@@ -1283,29 +1283,10 @@ impl StorageAdapter for JsonlStorageAdapter {
             .await
     }
     async fn sync_session_files(&self, info: &Info) -> io::Result<()> {
-        let info_clone = info.clone();
-        let adapter_clone = self.clone();
-        tokio::task::spawn_blocking(move || -> io::Result<()> {
-            use std::fs::OpenOptions;
-            let adapter = adapter_clone;
-            let files_to_sync = [
-                adapter.updates_file(&info_clone),
-                adapter.chat_file(&info_clone),
-                adapter.summary_file(&info_clone),
-                adapter.plan_file(&info_clone),
-                adapter.rewind_points_file(&info_clone),
-            ];
-            for file_path in &files_to_sync {
-                if file_path.exists()
-                    && let Ok(file) = OpenOptions::new().write(true).open(file_path)
-                {
-                    let _ = file.sync_all();
-                }
-            }
-            Ok(())
-        })
-        .await
-        .map_err(io::Error::other)?
+        let dir = self.session_dir(info);
+        tokio::task::spawn_blocking(move || super::sync_tree_durable(&dir))
+            .await
+            .map_err(io::Error::other)?
     }
     async fn replace_chat_history(
         &self,

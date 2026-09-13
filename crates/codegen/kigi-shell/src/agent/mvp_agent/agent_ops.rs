@@ -1365,7 +1365,8 @@ impl MvpAgent {
     /// `FlushAndAck` on the persistence actor — a true sync barrier that only
     /// resolves after all queued writes (chat messages, updates) hit disk.
     ///
-    /// Returns `Ok(())` on success, `Err(reason)` on timeout or channel failure.
+    /// Returns `Ok(())` once the writes are on disk, `Err(reason)` on a failed
+    /// flush, timeout or channel failure.
     pub(crate) async fn flush_session(
         &self,
         session_id: &acp::SessionId,
@@ -1384,7 +1385,11 @@ impl MvpAgent {
             return Err("send failed");
         }
         match tokio::time::timeout(std::time::Duration::from_secs(5), rx).await {
-            Ok(Ok(_)) => Ok(()),
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(error))) => {
+                tracing::error!(session_id = %session_id.0, %error, "persistence flush failed");
+                Err("persistence flush failed")
+            }
             Ok(Err(_)) => Err("channel closed"),
             Err(_) => Err("timeout"),
         }

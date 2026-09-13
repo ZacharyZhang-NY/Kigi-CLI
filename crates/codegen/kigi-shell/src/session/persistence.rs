@@ -359,11 +359,13 @@ pub enum PersistenceMsg {
     /// stays sequential with other summary.json mutations.
     GeneratedTitle(String),
     Flush,
-    /// Flush all pending writes, then signal the caller once the flush is complete.
-    /// Unlike `Flush` (fire-and-forget), this is a **sync barrier**: the caller's
-    /// oneshot only resolves after `flush_pending()` finishes writing to disk.
+    /// Flush all pending writes AND fsync the session files, then signal the
+    /// caller. Unlike `Flush` (fire-and-forget, page cache only), this is a
+    /// **durability barrier**: `Ok` means every prior write is on stable
+    /// media; `Err` reports a storage write that failed since the last
+    /// barrier or a failed sync.
     FlushAndAck {
-        respond_to: tokio::sync::oneshot::Sender<()>,
+        respond_to: tokio::sync::oneshot::Sender<io::Result<()>>,
     },
     /// Flush all pending writes, then copy the current session directory contents and return
     /// the in-memory snapshot to the caller (who can tar.gz + upload to GCS, etc.).
@@ -1392,6 +1394,9 @@ struct SessionPersistence {
     storage: Arc<dyn StorageAdapter>,
     /// Pending ACP notification for merging consecutive text chunks
     pending_notification: Option<acp::SessionNotification>,
+    /// First storage failure since the last barrier: `FlushAndAck` must not
+    /// report `Ok` for state that never reached the file.
+    pending_write_error: Option<io::Error>,
     rx: mpsc::UnboundedReceiver<PersistenceMsg>,
     /// Session title generation lifecycle.
     summary: crate::session::summary::SummaryGenerator,
@@ -1491,29 +1496,49 @@ impl SessionPersistence {
         }
     }
 
-    async fn write_update(&mut self, update: &SessionUpdate) {
-        if let Err(e) = self.storage.append_update(&self.info, update).await {
-            tracing::warn!(?e, "failed to write update");
+    fn note_storage_failure(&mut self, error: &io::Error) {
+        if self.pending_write_error.is_none() {
+            self.pending_write_error = Some(io::Error::new(error.kind(), error.to_string()));
         }
     }
 
-    /// Flush any pending merged ACP notification to disk.
-    async fn flush_pending(&mut self) {
-        // Write any pending merged ACP notification
-        if let Some(notification) = self.pending_notification.take() {
-            self.write_update(&SessionUpdate::Acp(Box::new(notification)))
-                .await;
+    /// Append an update; a failure is logged and latched for the next barrier.
+    async fn write_update(&mut self, update: &SessionUpdate) -> io::Result<()> {
+        let result = self.storage.append_update(&self.info, update).await;
+        if let Err(error) = &result {
+            tracing::warn!(%error, "failed to write update");
+            self.note_storage_failure(error);
+        }
+        result
+    }
+
+    /// Write the pending merged ACP notification.
+    async fn flush_pending(&mut self) -> io::Result<()> {
+        match self.pending_notification.take() {
+            Some(notification) => {
+                self.write_update(&SessionUpdate::Acp(Box::new(notification)))
+                    .await
+            }
+            None => Ok(()),
         }
     }
 
-    /// Flush pending writes and sync all session files to disk.
-    /// Called before CopyFile to ensure all data is persisted.
-    async fn flush_and_sync(&mut self) {
-        self.flush_pending().await;
-        // Sync all session files to disk to ensure they're actually written
-        if let Err(e) = self.storage.sync_session_files(&self.info).await {
-            tracing::warn!(?e, "Failed to sync session files to disk");
+    /// Fsync every session file to stable media.
+    async fn sync_files(&self) -> io::Result<()> {
+        let synced = self.storage.sync_session_files(&self.info).await;
+        if let Err(error) = &synced {
+            tracing::warn!(%error, "failed to sync session files to disk");
         }
+        synced
+    }
+
+    /// The `FlushAndAck` barrier. First error wins: a write that failed since
+    /// the last barrier outranks a failed sync.
+    async fn flush_and_sync(&mut self) -> io::Result<()> {
+        let flushed = self.flush_pending().await;
+        let prior_write = self.pending_write_error.take().map_or(Ok(()), Err);
+        let synced = self.sync_files().await;
+        flushed.and(prior_write).and(synced)
     }
 
     async fn run(mut self) {
@@ -1530,34 +1555,38 @@ impl SessionPersistence {
             }
             match msg {
                 PersistenceMsg::Flush => {
-                    self.flush_pending().await;
+                    // Logged and latched by write_update; the next barrier reports it.
+                    let _ = self.flush_pending().await;
                 }
                 PersistenceMsg::FlushAndAck { respond_to } => {
-                    self.flush_pending().await;
-                    let _ = respond_to.send(());
+                    let result = self.flush_and_sync().await;
+                    let _ = respond_to.send(result);
                 }
                 PersistenceMsg::Update(update) => {
                     match update {
                         SessionUpdate::Acp(notification) => {
                             // ACP notifications use merging to coalesce consecutive text chunks
                             if let Some(to_write) = self.maybe_merge_notification(&notification) {
-                                self.write_update(&SessionUpdate::Acp(Box::new(to_write)))
+                                // Logged and latched by write_update.
+                                let _ = self
+                                    .write_update(&SessionUpdate::Acp(Box::new(to_write)))
                                     .await;
                             }
                         }
                         SessionUpdate::Xai(_) => {
-                            // xAI notifications are written directly without merging
-                            self.write_update(&update).await;
+                            // Written directly without merging; logged and latched by write_update.
+                            let _ = self.write_update(&update).await;
                         }
                     }
                 }
                 PersistenceMsg::Chat(chat_msg) => {
-                    if let Err(e) = self
+                    if let Err(error) = self
                         .storage
                         .append_chat_message(&self.info, &chat_msg)
                         .await
                     {
-                        tracing::warn!(?e, "failed to write chat message");
+                        tracing::warn!(%error, "failed to write chat message");
+                        self.note_storage_failure(&error);
                     }
                 }
                 PersistenceMsg::ReplaceChatHistory(messages) => {
@@ -1571,6 +1600,7 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, "failed to replace chat history");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::CurrentModel {
@@ -1589,21 +1619,25 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, "failed to update current model");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::PlanState(state) => {
                     if let Err(e) = self.storage.write_plan_state(&self.info, &state).await {
                         tracing::warn!(?e, "failed to write plan state");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::PlanModeState(state) => {
                     if let Err(e) = self.storage.write_plan_mode_state(&self.info, &state).await {
                         tracing::warn!(?e, "failed to write plan mode state");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::GoalModeState(state) => {
                     if let Err(e) = self.storage.write_goal_mode_state(&self.info, &state).await {
                         tracing::warn!(?e, "failed to write goal mode state");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::GraphModeState(state) => {
@@ -1613,6 +1647,7 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, "failed to write graph mode state");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::ContentChunk(content_chunks) => {
@@ -1686,12 +1721,14 @@ impl SessionPersistence {
                         }
                         Err(e) => {
                             tracing::warn!(?e, "failed to persist generated session title");
+                            self.note_storage_failure(&e);
                         }
                     }
                 }
                 PersistenceMsg::RewindPoint(point) => {
-                    if let Err(e) = self.storage.append_rewind_point(&self.info, &point).await {
-                        tracing::warn!(?e, "failed to write rewind point");
+                    if let Err(error) = self.storage.append_rewind_point(&self.info, &point).await {
+                        tracing::warn!(%error, "failed to write rewind point");
+                        self.note_storage_failure(&error);
                     }
                 }
                 PersistenceMsg::TruncateRewindPoints { from_index } => {
@@ -1701,6 +1738,7 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, from_index, "failed to truncate rewind points");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::MergeRewindPointsFrom { target_index } => {
@@ -1710,6 +1748,7 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, target_index, "failed to merge rewind points");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::CollectionId(collection_id) => {
@@ -1719,6 +1758,7 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, "failed to write collection id");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::NextTraceTurn {
@@ -1731,11 +1771,13 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, "failed to write next trace turn");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::Signals(signals) => {
                     if let Err(e) = self.storage.write_signals(&self.info, &signals).await {
                         tracing::warn!(?e, "failed to write session signals");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::AnnouncementState(state) => {
@@ -1745,16 +1787,19 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, "failed to write announcement state");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::Feedback(entry) => {
                     if let Err(e) = self.storage.append_feedback(&self.info, &entry).await {
                         tracing::warn!(?e, "failed to write feedback entry");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::Btw(entry) => {
                     if let Err(e) = self.storage.append_btw(&self.info, &entry).await {
                         tracing::warn!(?e, "failed to write btw entry");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::GitHead { commit, branch } => {
@@ -1764,6 +1809,7 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, "failed to persist git HEAD");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::CompactionCheckpoint(checkpoint) => {
@@ -1773,6 +1819,7 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, "failed to write compaction checkpoint file");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::CompactionRequest(request) => {
@@ -1782,11 +1829,13 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, "failed to write compaction request artifact");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::RecapRequest(request) => {
                     if let Err(e) = self.storage.write_recap_request(&self.info, &request).await {
                         tracing::warn!(?e, "failed to write recap request artifact");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::CompactionSegment(segment) => {
@@ -1796,20 +1845,25 @@ impl SessionPersistence {
                         .await
                     {
                         tracing::warn!(?e, "failed to write compaction segment");
+                        self.note_storage_failure(&e);
                     }
                 }
                 PersistenceMsg::CopyFile { one_shot } => {
-                    // Flush pending writes and sync all session files to disk before copying.
-                    self.flush_and_sync().await;
-
-                    let result = self.copy_session_dir_to_memory().await;
+                    // Not the durability barrier: the write-failure latch stays for FlushAndAck.
+                    let flushed = self.flush_pending().await;
+                    let result = match flushed.and(self.sync_files().await) {
+                        Ok(()) => self.copy_session_dir_to_memory().await,
+                        Err(error) => {
+                            Err(anyhow::Error::new(error).context("session files are not on disk"))
+                        }
+                    };
                     let _ = one_shot.send(result);
                 }
             }
         }
 
-        // Drain the merge buffer on channel close.
-        self.flush_pending().await;
+        // Drain the merge buffer on channel close; a failure is logged by write_update.
+        let _ = self.flush_pending().await;
     }
 
     async fn copy_session_dir_to_memory(&self) -> anyhow::Result<SessionStateCopy> {
@@ -2002,6 +2056,7 @@ pub(crate) async fn new(
             info: info_clone,
             storage: storage.clone(),
             pending_notification: None,
+            pending_write_error: None,
             rx,
             summary: crate::session::summary::SummaryGenerator::new(
                 crate::session::summary::SummaryConfig {
@@ -2070,6 +2125,7 @@ pub async fn new_with_explicit_dir(
             info: info_clone,
             storage: storage.clone(),
             pending_notification: None,
+            pending_write_error: None,
             rx,
             summary: crate::session::summary::SummaryGenerator::new(
                 crate::session::summary::SummaryConfig {
@@ -2181,6 +2237,7 @@ pub(crate) async fn load_light(
             info: loaded_info,
             storage: storage.clone(),
             pending_notification: None,
+            pending_write_error: None,
             rx,
             summary: summary_gen,
             registry_title_sync,
@@ -3623,5 +3680,122 @@ mod repo_wide_resolution_tests {
             deser.resolution_kind,
             LocalSessionResolutionKind::SameRepoDifferentCwd
         );
+    }
+}
+
+#[cfg(test)]
+mod barrier_tests {
+    use super::*;
+
+    fn sampling_client() -> crate::sampling::Client {
+        crate::sampling::Client::new(kigi_sampler::SamplerConfig {
+            api_key: Some("test-key".to_string()),
+            base_url: "http://localhost".to_string(),
+            model: "test".to_string(),
+            max_completion_tokens: None,
+            temperature: None,
+            top_p: None,
+            api_backend: Default::default(),
+            chat_compat: Default::default(),
+            auth_scheme: Default::default(),
+            anthropic_oauth: false,
+            github_copilot: false,
+            openai_codex: false,
+            extra_headers: Default::default(),
+            context_window: 100_000,
+            force_http1: false,
+            max_retries: None,
+            stream_tool_calls: false,
+            idle_timeout_secs: None,
+            reasoning_effort: None,
+            origin_client: None,
+            attribution_callback: None,
+            bearer_resolver: None,
+            supports_backend_search: false,
+            compactions_remaining: None,
+            compaction_at_tokens: None,
+            doom_loop_recovery: None,
+            header_injector: None,
+        })
+        .expect("sampling client should build")
+    }
+
+    async fn barrier(handle: &PersistenceHandle) -> io::Result<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        handle
+            .tx
+            .send(PersistenceMsg::FlushAndAck { respond_to: tx })
+            .unwrap();
+        rx.await.unwrap()
+    }
+
+    async fn spawn(dir: &std::path::Path) -> (Info, PersistenceHandle) {
+        let info = Info {
+            id: acp::SessionId::new("barrier"),
+            cwd: dir.to_string_lossy().into_owned(),
+        };
+        let handle = new_with_explicit_dir(
+            &info,
+            dir.to_path_buf(),
+            acp::ModelId::new("test-model"),
+            sampling_client(),
+            crate::test_support::TEST_MODEL.to_owned(),
+        )
+        .await
+        .unwrap();
+        (info, handle)
+    }
+
+    /// A chat append that never reached the file fails the next barrier once;
+    /// the barrier after that is clean again.
+    #[tokio::test]
+    async fn flush_and_ack_reports_a_lost_chat_append_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (info, handle) = spawn(dir.path()).await;
+        barrier(&handle).await.unwrap();
+
+        // A directory where the chat log should be makes the append fail.
+        let chat_file = JsonlStorageAdapter::with_explicit_session_dir(dir.path().to_path_buf())
+            .chat_file(&info);
+        let _ = std::fs::remove_file(&chat_file);
+        std::fs::create_dir(&chat_file).unwrap();
+        handle
+            .tx
+            .send(PersistenceMsg::Chat(ConversationItem::user("lost")))
+            .unwrap();
+        // CopyFile is an ordering fence that keeps the write-failure latch.
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        handle
+            .tx
+            .send(PersistenceMsg::CopyFile { one_shot: tx })
+            .unwrap();
+        let _ = rx.await.unwrap();
+        // With the path restored only the lost append can fail the barrier.
+        std::fs::remove_dir(&chat_file).unwrap();
+        let error = barrier(&handle).await.unwrap_err();
+        assert_ne!(error.kind(), io::ErrorKind::NotFound, "got {error}");
+
+        barrier(&handle).await.unwrap();
+    }
+
+    /// A history rewrite that never landed fails the next barrier.
+    #[tokio::test]
+    async fn flush_and_ack_reports_a_failed_history_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let (info, handle) = spawn(dir.path()).await;
+        let chat_file = JsonlStorageAdapter::with_explicit_session_dir(dir.path().to_path_buf())
+            .chat_file(&info);
+        // The rewrite stages a sibling temp file; a directory there fails it.
+        std::fs::create_dir(chat_file.with_extension("jsonl.tmp")).unwrap();
+        handle
+            .tx
+            .send(PersistenceMsg::ReplaceChatHistory(vec![
+                ConversationItem::user("rewritten"),
+            ]))
+            .unwrap();
+        let error = barrier(&handle).await.unwrap_err();
+        assert_ne!(error.kind(), io::ErrorKind::NotFound, "got {error}");
+
+        barrier(&handle).await.unwrap();
     }
 }

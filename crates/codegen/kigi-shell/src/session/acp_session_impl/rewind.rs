@@ -548,17 +548,10 @@ impl SessionActor {
 
         if report.changed() && !dry_run {
             // Flush barrier: success must mean the rewrite is on disk.
-            let (flush_tx, flush_rx) = tokio::sync::oneshot::channel();
-            if self
-                .notifications
-                .persistence_tx
-                .send(PersistenceMsg::FlushAndAck {
-                    respond_to: flush_tx,
-                })
-                .is_err()
-                || flush_rx.await.is_err()
-            {
-                anyhow::bail!("history repaired in memory but the persistence flush failed");
+            if let Err(error) = self.persistence_barrier().await {
+                anyhow::bail!(
+                    "history repaired in memory but the persistence flush failed: {error}"
+                );
             }
             tracing::warn!(
                 session_id = %self.session_info.id.0,

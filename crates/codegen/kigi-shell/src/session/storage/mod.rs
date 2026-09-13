@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use std::io::{self, BufRead, BufReader, Seek, SeekFrom};
+use std::io::{self, BufRead, BufReader, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use crate::extensions::notification::SessionNotification;
@@ -14,6 +14,137 @@ use crate::tools::todo::TodoState;
 use agent_client_protocol as acp;
 use kigi_sampling_types::ReasoningEffort;
 use kigi_workspace::session::file_state::RewindPoint;
+
+/// Fsync `file` to stable media; macOS `fsync` may stop at the drive cache.
+#[cfg(target_os = "macos")]
+pub(crate) fn sync_file_durable(file: &std::fs::File) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    file.sync_all()?;
+    fullfsync_raw(file.as_raw_fd())
+}
+
+#[cfg(target_os = "macos")]
+fn fullfsync_raw(fd: std::os::fd::RawFd) -> io::Result<()> {
+    // SAFETY: fcntl on a live descriptor with no pointer arguments.
+    if unsafe { libc::fcntl(fd, libc::F_FULLFSYNC) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn sync_file_durable(file: &std::fs::File) -> io::Result<()> {
+    file.sync_all()
+}
+
+/// Fsync `dir` so entries just created or renamed into it survive power loss.
+#[cfg(target_os = "macos")]
+pub(crate) fn sync_dir_durable(dir: &Path) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    let file = std::fs::File::open(dir)?;
+    file.sync_all()?;
+    fullfsync_raw(file.as_raw_fd())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub(crate) fn sync_dir_durable(dir: &Path) -> io::Result<()> {
+    std::fs::File::open(dir)?.sync_all()
+}
+
+/// Windows has no directory-handle fsync; NTFS journals directory metadata.
+#[cfg(windows)]
+pub(crate) fn sync_dir_durable(_dir: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+/// Write `bytes` to `tmp`, fsync them, rename over `dest`, fsync the parent:
+/// a crash never leaves `dest` torn, and the rename never publishes
+/// unsynced bytes over a synced file.
+pub(crate) fn write_bytes_atomic(tmp: &Path, dest: &Path, bytes: &[u8]) -> io::Result<()> {
+    let written = std::fs::File::create(tmp).and_then(|mut file| {
+        file.write_all(bytes)?;
+        sync_file_durable(&file)
+    });
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(tmp);
+        return Err(error);
+    }
+    crate::util::fs::replace_file(tmp, dest)?;
+    sync_parent_dir_durable(dest)
+}
+
+fn sync_parent_dir_durable(path: &Path) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
+    sync_dir_durable(parent)
+}
+
+fn open_for_sync(path: &Path) -> io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    // FlushFileBuffers needs a writable handle; fsync does not.
+    options.write(cfg!(windows));
+    options.open(path)
+}
+
+/// Fsync every file and directory under `dir`, `dir` included, so all
+/// session state reaches stable media. A path that vanished is not an error.
+pub(crate) fn sync_tree_durable(dir: &Path) -> io::Result<()> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    for entry in entries {
+        let entry = entry?;
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        if file_type.is_dir() {
+            sync_tree_durable(&entry.path())?;
+        } else if file_type.is_file() {
+            match open_for_sync(&entry.path()) {
+                Ok(file) => sync_file_durable(&file)?,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+        }
+    }
+    match sync_dir_durable(dir) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
+}
+
+/// `create_dir_all`, then fsync every directory that gained an entry so the
+/// chain itself survives power loss. A directory that exists but is still
+/// empty re-syncs a few ancestors: an earlier create may have died before
+/// its sync.
+pub(crate) fn create_dir_all_durable(dir: &Path) -> io::Result<()> {
+    let mut gaining_an_entry = Vec::new();
+    let mut cursor = dir;
+    while !cursor.exists() {
+        let Some(parent) = cursor.parent() else { break };
+        gaining_an_entry.push(parent.to_path_buf());
+        cursor = parent;
+    }
+    std::fs::create_dir_all(dir)?;
+    if gaining_an_entry.is_empty() && std::fs::read_dir(dir)?.next().is_none() {
+        gaining_an_entry.extend(dir.ancestors().skip(1).take(4).map(Path::to_path_buf));
+    }
+    for parent in gaining_an_entry.iter().filter(|parent| !is_fs_root(parent)) {
+        sync_dir_durable(parent)?;
+    }
+    Ok(())
+}
+
+fn is_fs_root(path: &Path) -> bool {
+    path.parent()
+        .is_none_or(|parent| parent.as_os_str().is_empty())
+}
 
 pub mod jsonl;
 pub mod search;

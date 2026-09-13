@@ -681,22 +681,14 @@ impl SessionActor {
                     .await
                     .is_some()
                 {
-                    let (flush_tx, flush_rx) = oneshot::channel();
-                    if self
-                        .notifications
-                        .persistence_tx
-                        .send(PersistenceMsg::FlushAndAck {
-                            respond_to: flush_tx,
-                        })
-                        .is_ok()
-                        && flush_rx.await.is_ok()
-                    {
-                        let _ = ack.send(());
-                    } else {
-                        tracing::error!(
-                            session_id = % self.session_info.id.0, prompt_id = %
-                            prompt_id, "persist_ack flush barrier failed"
-                        );
+                    match self.persistence_barrier().await {
+                        Ok(()) => {
+                            let _ = ack.send(());
+                        }
+                        Err(error) => tracing::error!(
+                            session_id = % self.session_info.id.0, prompt_id = % prompt_id,
+                            %error, "persist_ack flush barrier failed"
+                        ),
                     }
                 } else {
                     tracing::error!(

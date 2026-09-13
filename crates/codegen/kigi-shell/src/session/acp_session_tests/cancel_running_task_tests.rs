@@ -435,7 +435,7 @@ async fn first_turn_memory_injection_persists_to_chat_history() {
                     respond_to: flush_tx,
                 })
                 .unwrap();
-            flush_rx.await.unwrap();
+            flush_rx.await.unwrap().unwrap();
             let loaded = storage
                 .load_session_without_updates(&session_info)
                 .await
@@ -757,7 +757,7 @@ async fn first_turn_memory_injection_disabled_does_not_persist_to_chat_history()
                     respond_to: flush_tx,
                 })
                 .unwrap();
-            flush_rx.await.unwrap();
+            flush_rx.await.unwrap().unwrap();
             let storage = crate::session::storage::JsonlStorageAdapter::with_explicit_session_dir(
                 session_dir.path().to_path_buf(),
             );
@@ -1310,7 +1310,7 @@ async fn actor_with_persistence_drain() -> std::sync::Arc<SessionActor> {
     tokio::task::spawn_local(async move {
         while let Some(msg) = persistence_rx.recv().await {
             if let PersistenceMsg::FlushAndAck { respond_to } = msg {
-                let _ = respond_to.send(());
+                let _ = respond_to.send(Ok(()));
             }
         }
     });
