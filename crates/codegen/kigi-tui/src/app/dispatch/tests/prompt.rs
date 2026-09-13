@@ -1810,7 +1810,13 @@ fn slash_compact_enqueues_command() {
     let effects = dispatch(Action::SendPrompt("/compact".into()), &mut app);
     // /compact enqueues as Command and drains immediately (agent was idle).
     assert_eq!(effects.len(), 1);
-    assert!(matches!(&effects[0], Effect::Compact { .. }));
+    assert!(matches!(
+        &effects[0],
+        Effect::Compact {
+            user_context: None,
+            ..
+        }
+    ));
     // Prompt should be cleared.
     assert!(app.agents[&id].prompt.text().is_empty());
 }
@@ -1853,6 +1859,19 @@ fn palette_dispatch_preserves_prompt_draft() {
     );
 }
 
+/// An edited queue row keeps its text verbatim, so leading whitespace must not drop the instructions.
+#[test]
+fn compact_user_context_survives_leading_whitespace_from_a_queue_edit() {
+    use crate::app::dispatch::queue::compact_user_context;
+    assert_eq!(
+        compact_user_context(" /compact focus on auth").as_deref(),
+        Some("focus on auth")
+    );
+    assert_eq!(compact_user_context("\n/compact  x ").as_deref(), Some("x"));
+    assert_eq!(compact_user_context("/compact"), None);
+    assert_eq!(compact_user_context("/other args"), None);
+}
+
 #[test]
 fn slash_compact_with_context_enqueues_command() {
     let mut app = test_app_with_agent();
@@ -1861,7 +1880,13 @@ fn slash_compact_with_context_enqueues_command() {
         &mut app,
     );
     assert_eq!(effects.len(), 1);
-    assert!(matches!(&effects[0], Effect::Compact { .. }));
+    assert!(matches!(
+        &effects[0],
+        Effect::Compact {
+            user_context: Some(ctx),
+            ..
+        } if ctx == "focus on auth"
+    ));
 }
 
 #[test]

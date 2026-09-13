@@ -162,6 +162,12 @@ fn format_cron_prompt(prompt: &str, task_id: &str, human_schedule: &str) -> Stri
     kigi_tools::reminders::format_scheduled_task_prompt(prompt, task_id, human_schedule)
 }
 
+/// `/compact <instructions>` text from a queued command; a queue edit may leave leading whitespace.
+pub(super) fn compact_user_context(text: &str) -> Option<String> {
+    let inv = crate::slash::parse_invocation(text.trim_start())?;
+    let args = inv.args.trim();
+    (inv.token == "compact" && !args.is_empty()).then(|| args.to_string())
+}
 /// Try to send the next queued entry (prompt, command, bash, or cron) if the agent is idle.
 ///
 /// Called after enqueue operations and task completions to advance the queue.
@@ -392,10 +398,12 @@ pub(crate) fn maybe_drain_queue(agent: &mut AgentView) -> Vec<Effect> {
             agent.end_work_announced = false;
             agent.session.start_command(AgentCommand::Compact);
             agent.turn_started_at = Some(Instant::now());
+            let user_context = compact_user_context(&queued.text);
 
             vec![Effect::Compact {
                 agent_id,
                 session_id,
+                user_context,
             }]
         }
         QueueEntryKind::BashCommand => {
