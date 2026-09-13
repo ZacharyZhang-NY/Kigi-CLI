@@ -734,7 +734,8 @@ impl AgentView {
                 Event::Mouse(mouse) => self.handle_inline_edit_mouse(mouse),
                 Event::Paste(text) => {
                     if let Some(ref mut edit) = self.inline_edit {
-                        edit.textarea.insert_str(text);
+                        edit.textarea
+                            .insert_str(&crate::views::prompt_widget::normalize_line_breaks(text));
                     }
                     InputOutcome::Changed
                 }

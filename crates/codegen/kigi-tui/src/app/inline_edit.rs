@@ -290,6 +290,27 @@ mod tests {
         agent
     }
 
+    /// The previous-message editor is its own paste route; separators normalize there too.
+    #[test]
+    fn inline_edit_paste_normalizes_line_separators() {
+        let mut agent = agent_with_prompt();
+        assert!(agent.enter_inline_edit(0));
+        let registry = crate::actions::ActionRegistry::defaults();
+        agent.handle_input(
+            &crossterm::event::Event::Paste("a\u{2028}b\u{2029}c".into()),
+            &registry,
+        );
+        let text = agent
+            .inline_edit
+            .as_ref()
+            .expect("editing state")
+            .textarea
+            .text()
+            .to_owned();
+        assert!(text.contains("a\nb\nc"), "{text:?}");
+        assert!(!text.contains('\u{2028}'), "{text:?}");
+    }
+
     /// Entering edit mode on a plain user prompt captures the original text,
     /// resolves the rewind target, and selects the entry.
     #[test]

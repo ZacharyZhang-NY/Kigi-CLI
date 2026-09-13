@@ -1580,7 +1580,7 @@ impl PromptWidget {
         // without creating a [Pasted: N lines] element.
         if crate::input::key::is_inline_paste_key(key) {
             if let Some(text) = system_clipboard_get() {
-                let text = normalize_cr(&text);
+                let text = normalize_line_breaks(&text);
                 if text.is_empty() {
                     crate::clipboard::log_paste_key_empty_host_clipboard("prompt_widget_inline");
                     return PromptEvent::Ignored;
@@ -2082,13 +2082,18 @@ impl PromptWidget {
     /// Repasting a chip's exact content while the cursor is on or right
     /// after it expands that chip instead of inserting a duplicate.
     pub fn handle_paste(&mut self, text: &str) -> PromptEvent {
+        self.paste_prepared(&normalize_line_breaks(text))
+    }
+    /// Paste a dropped path verbatim: a separator inside a filename is payload, not a line break.
+    pub fn insert_dropped_path(&mut self, text: &str) -> PromptEvent {
+        self.paste_prepared(text)
+    }
+    /// The paste path after line-break normalization: selection replacement, chips, image records.
+    fn paste_prepared(&mut self, text: &str) -> PromptEvent {
         if text.is_empty() {
             return PromptEvent::Ignored;
         }
         self.post_insert_image_preview = None;
-
-        let text = normalize_cr(text);
-        let text = &text;
         let replacing_selection = self.textarea.selection_range().is_some();
 
         // Repaste-to-expand: "paste didn't do what I want? paste again."
@@ -3420,19 +3425,15 @@ fn chip_line(label: String) -> Line<'static> {
     ])
 }
 
-/// Normalize bare `\r` to `\n`, leaving `\r\n` pairs intact.
-///
-/// Some terminals send bare `\r` for line breaks in bracketed-paste content.
-/// Rust's `str::lines()` only splits on `\n` and `\r\n`, so without this
-/// normalization multi-line pastes would be treated as a single line.
-fn normalize_cr(text: &str) -> String {
+/// Bare `\r`, U+2028 and U+2029 become `\n` (`\r\n` stays): `str::lines()` splits on none of them, and the invisible separators break the width model.
+pub(crate) fn normalize_line_breaks(text: &str) -> String {
     let mut s = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == '\r' && chars.peek() != Some(&'\n') {
-            s.push('\n');
-        } else {
-            s.push(c);
+        match c {
+            '\r' if chars.peek() != Some(&'\n') => s.push('\n'),
+            '\u{2028}' | '\u{2029}' => s.push('\n'),
+            _ => s.push(c),
         }
     }
     s

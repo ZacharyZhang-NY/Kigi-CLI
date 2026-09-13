@@ -344,7 +344,10 @@ impl AgentView {
                         self.prompt.textarea.begin_undo_group();
                         group_open = true;
                     }
-                    if matches!(self.prompt.handle_paste(&to_insert), PromptEvent::Edited) {
+                    if matches!(
+                        self.prompt.insert_dropped_path(&to_insert),
+                        PromptEvent::Edited
+                    ) {
                         inserted_non_image = true;
                     }
                 }

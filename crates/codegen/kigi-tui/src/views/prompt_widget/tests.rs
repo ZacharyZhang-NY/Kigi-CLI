@@ -1887,22 +1887,48 @@
 
     #[test]
     fn normalize_cr_bare_cr() {
-        assert_eq!(normalize_cr("a\rb\rc"), "a\nb\nc");
+        assert_eq!(normalize_line_breaks("a\rb\rc"), "a\nb\nc");
     }
 
     #[test]
     fn normalize_cr_crlf_preserved() {
-        assert_eq!(normalize_cr("a\r\nb\r\nc"), "a\r\nb\r\nc");
+        assert_eq!(normalize_line_breaks("a\r\nb\r\nc"), "a\r\nb\r\nc");
+    }
+
+    /// A dropped file name may contain U+2028; the inserted path must still name that file.
+    #[test]
+    fn insert_dropped_path_keeps_unicode_separators() {
+        let mut pw = PromptWidget::new();
+        pw.insert_dropped_path("/tmp/p16\u{2028}note.txt ");
+        assert_eq!(pw.text(), "/tmp/p16\u{2028}note.txt ");
+    }
+
+    /// A dropped path takes the full paste path: it replaces the selection like any paste.
+    #[test]
+    fn insert_dropped_path_replaces_the_selection() {
+        let mut pw = PromptWidget::new();
+        pw.handle_paste("/tmp/old.txt ");
+        let len = pw.textarea.text().len();
+        pw.textarea.set_selection(0, len);
+        assert_eq!(pw.insert_dropped_path("/tmp/new.txt "), PromptEvent::Edited);
+        assert_eq!(pw.textarea.text(), "/tmp/new.txt ");
+        assert!(pw.textarea.selection_range().is_none());
+    }
+
+    #[test]
+    fn normalize_line_breaks_unicode_separators() {
+        assert_eq!(normalize_line_breaks("a\u{2028}b\u{2029}c"), "a\nb\nc");
+        assert_eq!(normalize_line_breaks("a\u{2028}\r\nb"), "a\n\r\nb");
     }
 
     #[test]
     fn normalize_cr_mixed() {
-        assert_eq!(normalize_cr("a\r\nb\rc"), "a\r\nb\nc");
+        assert_eq!(normalize_line_breaks("a\r\nb\rc"), "a\r\nb\nc");
     }
 
     #[test]
     fn normalize_cr_no_cr() {
-        assert_eq!(normalize_cr("no cr\nhere"), "no cr\nhere");
+        assert_eq!(normalize_line_breaks("no cr\nhere"), "no cr\nhere");
     }
 
 
@@ -1911,7 +1937,7 @@
         let mut pw = PromptWidget::new();
         let text = "line1\nline2\nline3";
         // Simulate Ctrl+Shift+V: insert_str directly, no element.
-        let normalized = normalize_cr(text);
+        let normalized = normalize_line_breaks(text);
         pw.textarea.insert_str(&normalized);
         assert_eq!(pw.textarea.text(), text);
         assert!(pw.textarea.elements().is_empty());
