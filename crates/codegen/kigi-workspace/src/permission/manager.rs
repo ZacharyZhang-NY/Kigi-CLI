@@ -8,7 +8,8 @@ use kigi_acp_lib::AcpAgentGatewaySender as GatewaySender;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::permission::bash_command_splitting::{
-    all_commands_from_script, is_setup_command, unwrap_wrappers,
+    all_commands_from_script, is_setup_command, matches_prefix_words, unquoted_may_expand,
+    unwrap_wrappers,
 };
 use crate::permission::policy::CompiledPolicy;
 use crate::permission::prompter::{AcpPrompter, PromptOutcome};
@@ -143,75 +144,98 @@ fn mcp_pre_decision(
 
 /// True when `words` is an `rg` invocation that enables a preprocessor.
 ///
-/// `rg --pre COMMAND` (or `--pre=COMMAND`) runs `COMMAND <file>` for every
-/// searched file, so it can execute arbitrary programs. It must not ride the
-/// built-in safe-command auto-allow (unlike a pipeline, `--pre` stays one
-/// bash segment whose primary is still `rg`).
-///
-/// Deliberately does **not** match `--pre-glob`, which only filters when a
-/// preprocessor runs and does not itself spawn processes.
-fn rg_has_pre_flag(words: &[String]) -> bool {
-    if words.first().map(String::as_str) != Some("rg") {
+/// `rg` options that execute a program per searched file: `--pre COMMAND`
+/// runs it as a preprocessor, `--hostname-bin COMMAND` to print hostnames.
+/// Both accept `--flag=VALUE`; `--pre-glob` only filters and is not listed.
+pub(crate) const RG_UNSAFE_FLAGS: &[&str] = &["--pre", "--hostname-bin"];
+
+/// Whether an `rg` invocation carries a flag from [`RG_UNSAFE_FLAGS`], so
+/// it must not ride the built-in safe-command auto-allow (unlike a
+/// pipeline, the flag stays one bash segment whose primary is still `rg`).
+/// The head is matched by lowercased basename like Auto's routine check.
+/// Every later word is inspected, on purpose: rg's option grammar
+/// (`--replace -- --pre …`, `-ne -- --hostname-bin …`) makes any partial
+/// arity model bypassable, so a literal search for the flag name costs a
+/// prompt instead of the auto-allow. Words are the parser's decoded text;
+/// one the shell would still expand (`--{pre,pre}`, a glob that could
+/// match a file named `--pre`) counts as unsafe too.
+pub(crate) fn rg_has_unsafe_flag(words: &[String], expandable: &[bool]) -> bool {
+    let head = words.first().map(|w| {
+        w.rsplit(['/', '\\'])
+            .next()
+            .unwrap_or(w)
+            .to_ascii_lowercase()
+    });
+    if head.as_deref() != Some("rg") {
         return false;
     }
-    words
-        .iter()
-        .any(|w| w == "--pre" || w.starts_with("--pre="))
+    words.iter().zip(expandable).skip(1).any(|(w, may_expand)| {
+        let name = w.split_once('=').map_or(w.as_str(), |(name, _)| name);
+        *may_expand || RG_UNSAFE_FLAGS.contains(&name)
+    })
 }
 
 /// Check whether the command words (already parsed by tree-sitter) match one of
 /// the known safe command prefixes.
-fn is_safe_command_words(words: &[String]) -> bool {
+fn is_safe_command_words(words: &[String], expandable: &[bool]) -> bool {
     if words.is_empty() {
         return false;
     }
-    if rg_has_pre_flag(words) {
+    if rg_has_unsafe_flag(words, expandable) {
         return false;
     }
-    let joined = words.join(" ");
-    is_safe_command_words_str(&joined)
+    SAFE_COMMAND_PREFIXES
+        .iter()
+        .any(|p| matches_prefix_words(words, p, false))
 }
 
 fn matches_command_prefix(cmd: &str, pattern: &str) -> bool {
     cmd == pattern || (cmd.starts_with(pattern) && cmd.as_bytes().get(pattern.len()) == Some(&b' '))
 }
 
-/// Shared prefix check used by both the tree-sitter path and the fallback path.
+/// Built-in safe prefixes shared by the argv path and the display-string path.
+const SAFE_COMMAND_PREFIXES: &[&str] = &[
+    "ls",
+    "cat",
+    "pwd",
+    "date",
+    "git status",
+    "git branch",
+    "git log",
+    "git diff",
+    "git ls-files",
+    "git show",
+    "git rev-parse",
+    "cargo check",
+    "whoami",
+    "hostname",
+    "uptime",
+    "grep",
+    "rg",
+    "kubectl get",
+    "kubectl logs",
+    "kubectl describe",
+    "ps",
+    "bin/explorer ls",
+    "head",
+    "tail",
+    "wc",
+    "sort",
+    "uniq",
+    "tr",
+    "cut",
+];
+
+/// Display-string form of [`SAFE_COMMAND_PREFIXES`] (scope suggestions).
 fn is_safe_command_words_str(cmd: &str) -> bool {
-    matches_command_prefix(cmd, "ls")
-        || matches_command_prefix(cmd, "cat")
-        || matches_command_prefix(cmd, "pwd")
-        || matches_command_prefix(cmd, "date")
-        || matches_command_prefix(cmd, "git status")
-        || matches_command_prefix(cmd, "git branch")
-        || matches_command_prefix(cmd, "git log")
-        || matches_command_prefix(cmd, "git diff")
-        || matches_command_prefix(cmd, "git ls-files")
-        || matches_command_prefix(cmd, "git show")
-        || matches_command_prefix(cmd, "git rev-parse")
-        || matches_command_prefix(cmd, "cargo check")
-        || matches_command_prefix(cmd, "whoami")
-        || matches_command_prefix(cmd, "hostname")
-        || matches_command_prefix(cmd, "uptime")
-        || matches_command_prefix(cmd, "grep")
-        || matches_command_prefix(cmd, "rg")
-        || matches_command_prefix(cmd, "kubectl get")
-        || matches_command_prefix(cmd, "kubectl logs")
-        || matches_command_prefix(cmd, "kubectl describe")
-        || matches_command_prefix(cmd, "ps")
-        || matches_command_prefix(cmd, "bin/explorer ls")
-        || matches_command_prefix(cmd, "head")
-        || matches_command_prefix(cmd, "tail")
-        || matches_command_prefix(cmd, "wc")
-        || matches_command_prefix(cmd, "sort")
-        || matches_command_prefix(cmd, "uniq")
-        || matches_command_prefix(cmd, "tr")
-        || matches_command_prefix(cmd, "cut")
+    SAFE_COMMAND_PREFIXES
+        .iter()
+        .any(|p| matches_command_prefix(cmd, p))
     // CWE-863: `tee` is not in the safe-command list — it writes stdin
     // to arbitrary files, enabling pipelines like `cat data | tee /target` to
     // bypass edit permissions.
     //
-    // `rg --pre` is excluded at the words level via [`rg_has_pre_flag`] — the
+    // `rg --pre` is excluded at the words level via [`rg_has_unsafe_flag`] — the
     // string form here cannot see flag structure reliably after join.
 }
 
@@ -254,25 +278,17 @@ const ALWAYS_SAFE_COMMANDS: &[&str] = &[
 /// auto-approve via the always-safe primary alone — every non-setup segment
 /// must independently pass this (or the broader `is_safe_command_words`,
 /// or a user whitelist) check.
-fn is_always_safe_command_words(words: &[String]) -> bool {
+fn is_always_safe_command_words(words: &[String], expandable: &[bool]) -> bool {
     if words.is_empty() {
         return false;
     }
-    if rg_has_pre_flag(words) {
+    if rg_has_unsafe_flag(words, expandable) {
         return false;
     }
-
-    let joined = words.join(" ");
-
-    // CWE-183: use matches_command_prefix to require a word boundary after
-    // the safe prefix, preventing e.g. "tr" from matching "truncate".
-    for safe_pattern in ALWAYS_SAFE_COMMANDS {
-        if matches_command_prefix(&joined, safe_pattern) {
-            return true;
-        }
-    }
-
-    false
+    // CWE-183: whole-word match, so "tr" cannot match "truncate".
+    ALWAYS_SAFE_COMMANDS
+        .iter()
+        .any(|p| matches_prefix_words(words, p, false))
 }
 
 /// Default always-allow whitelist scope (word count) for a parsed command.
@@ -291,7 +307,9 @@ pub fn default_always_allow_scope(words: &[String]) -> usize {
     if words.is_empty() {
         return 0;
     }
-    if is_safe_command_words(words) {
+    // Display words carry no parser flags; expansion syntax is conservative.
+    let expandable: Vec<bool> = words.iter().map(|w| unquoted_may_expand(w)).collect();
+    if is_safe_command_words(words, &expandable) {
         if is_safe_command_words_str(&words[0]) {
             return 1;
         }
@@ -314,26 +332,35 @@ pub fn default_always_allow_scope(words: &[String]) -> usize {
 /// `is_dangerous_command` script-level check, but applied to every
 /// segment in a chain instead of only the start of the script.
 fn is_dangerous_command_words(words: &[String]) -> bool {
-    if words.is_empty() {
-        return false;
-    }
-    let joined = words.join(" ");
-    matches_command_prefix(&joined, "rm")
-        || matches_command_prefix(&joined, "chmod")
-        || matches_command_prefix(&joined, "chown")
-        || matches_command_prefix(&joined, "chgrp")
-        || matches_command_prefix(&joined, "chattr")
-        || matches_command_prefix(&joined, "pkill")
-        || matches_command_prefix(&joined, "kill")
-        || matches_command_prefix(&joined, "killall")
-        || matches_command_prefix(&joined, "git push")
+    [
+        "rm", "chmod", "chown", "chgrp", "chattr", "pkill", "kill", "killall", "git push",
+    ]
+    .iter()
+    .any(|p| matches_prefix_words(words, p, false))
 }
 
 /// Whitelist matching helper. Uses `matches_command_prefix` so that user
 /// allow/deny entries enforce a word boundary after the prefix — preventing
 /// the "git" entry from matching "gitleaks" (CWE-183).
-fn matches_whitelist_prefix(segment_str: &str, allowed_prefix: &str) -> bool {
-    matches_command_prefix(segment_str, allowed_prefix)
+/// A saved rule is the selected argv elements joined by one space, so it
+/// matches when some argv prefix joins back to it exactly: `rg private key`
+/// covers both `rg "private key"` and `rg private key`, while a padded
+/// program name (`rg    `) never joins to `rg`.
+fn matches_saved_deny(words: &[String], legacy_inner: &[String], rule: &str) -> bool {
+    // The legacy branch is the pre-0.1.15 check verbatim (wrappers peeled on
+    // the legacy spelling, space-boundary prefix on its joined text), so no
+    // deny saved by an older build narrows on upgrade.
+    (1..=words.len()).any(|k| words[..k].join(" ") == rule)
+        || matches_command_prefix(&legacy_inner.join(" "), rule)
+}
+
+/// A grant matches only token for word: the rule's tokens must equal the
+/// leading argv elements one by one, so neither one word spelled
+/// `git status` nor `./filter -n` absorbing a granted `-n` can claim a
+/// grant. A grant saved from a spaced argument therefore prompts again;
+/// that is the safe direction for an allow.
+fn matches_saved_grant(words: &[String], rule: &str) -> bool {
+    matches_prefix_words(words, rule, false)
 }
 
 /// Result of evaluating a bash script's segments against the current
@@ -392,6 +419,8 @@ pub(crate) fn evaluate_bash_segments_inner(
         // such as `timeout 30 rm -rf /tmp/foo` would be treated as a benign
         // `timeout` invocation and silently auto-allowed.
         let words = unwrap_wrappers(raw_words);
+        let expandable = &parsed.expandable()[raw_words.len() - words.len()..];
+        let legacy_inner = unwrap_wrappers(parsed.legacy_words());
         if is_setup_command(words) {
             continue;
         }
@@ -401,7 +430,7 @@ pub(crate) fn evaluate_bash_segments_inner(
         if let Some(d) = state
             .disallowed_bash_commands
             .iter()
-            .find(|d| matches_whitelist_prefix(&s, d))
+            .find(|d| matches_saved_deny(words, legacy_inner, d))
         {
             return SegmentEvaluation::Reject(format!(
                 "User previously rejected `{d}` for this session"
@@ -422,9 +451,10 @@ pub(crate) fn evaluate_bash_segments_inner(
         let matched_grant = state
             .allowed_bash_commands
             .iter()
-            .any(|a| matches_whitelist_prefix(&s, a));
+            .any(|a| matches_saved_grant(words, a));
         let matched_safe = honor_safe_lists
-            && (is_safe_command_words(words) || is_always_safe_command_words(words));
+            && (is_safe_command_words(words, expandable)
+                || is_always_safe_command_words(words, expandable));
         if matched_grant || matched_safe {
             if matched_grant {
                 via_session_grant = true;
@@ -3616,7 +3646,7 @@ mod tests {
 
     /// Test shim: pure rename of `is_always_safe_primary_command`.
     fn is_always_safe_primary_command(words: &[String]) -> bool {
-        is_always_safe_command_words(words)
+        is_always_safe_command_words(words, &vec![false; words.len()])
     }
 
     #[test]
@@ -3673,6 +3703,57 @@ mod tests {
         assert!(!is_safe_command("rg --pre cat pattern ."));
         assert!(!is_safe_command("rg --pre=/bin/cat pattern ."));
         assert!(!is_safe_command("rg -n --pre ./wrapper pattern"));
+        // --hostname-bin runs COMMAND to print the hostname — same exec hole.
+        assert!(!is_safe_command("rg --hostname-bin=./payload needle"));
+        assert!(!is_safe_command("rg --hostname-bin ./payload needle"));
+        // rg's option grammar lets a real flag follow a `--` or `-e` that is
+        // itself a value; the scan therefore never trusts those positions,
+        // and a literal search for the flag name falls back to a prompt.
+        assert!(!is_safe_command("rg --replace -- --pre ./payload needle ."));
+        assert!(!is_safe_command(
+            "rg --replace -e --hostname-bin ./payload needle ."
+        ));
+        assert!(!is_safe_command("rg -ne -- --hostname-bin ./payload ."));
+        assert!(!is_safe_command("rg -e needle --hostname-bin ./payload ."));
+        assert!(!is_safe_command("rg -- --hostname-bin ."));
+        assert!(!is_safe_command("RG --pre ./payload needle ."));
+        assert!(!is_safe_command("/usr/bin/rg --pre=cat needle ."));
+        // Quote concatenation keeps its source text through the parser; the
+        // shell would decode it into the flag.
+        assert!(!is_safe_command("rg --host\"\"name-bin ./payload needle ."));
+        assert!(!is_safe_command("rg --p're' ./payload needle ."));
+        assert!(!is_safe_command("rg --hos\\tname-bin ./payload needle ."));
+        assert!(!is_safe_command(
+            "rg --{hostname-bin,hostname-bin}=./payload needle file.rs"
+        ));
+        assert!(!is_safe_command("rg --{pre,pre}=./payload needle file.rs"));
+        assert!(!is_safe_command(
+            "rg --hostname-b[i]n ./payload needle file.rs"
+        ));
+        assert!(!is_safe_command(
+            "rg ''--hostname-bin ./payload needle file.rs"
+        ));
+        assert!(!is_safe_command(
+            "rg {--hostname-bin,--hostname-bin}=./payload needle file.rs"
+        ));
+        assert!(!is_safe_command(
+            "rg \"--host\\\nname-bin\" ./payload needle file.rs"
+        ));
+        // Decoded words keep their argv boundary: a padded or slashed program
+        // name is not `rg`, and a single word is not a two-word prefix.
+        assert!(!is_safe_command("env \"rg\"\"    \" needle file.rs"));
+        assert!(!is_safe_command("env rg\" /../payload\" needle file.rs"));
+        assert!(!is_safe_command("\"git status\""));
+        assert!(is_safe_command("grep \"foo bar\" file.txt"));
+        assert!(!is_safe_command("rg needle *"));
+        assert!(is_safe_command("rg -n \"foo bar\" ."));
+        assert!(is_safe_command("rg -g '*.rs' needle ."));
+        assert!(is_safe_command("ls *.rs"));
+        let unsafe_words: Vec<String> = "rg --hostname-bin=./payload needle"
+            .split(' ')
+            .map(String::from)
+            .collect();
+        assert_eq!(default_always_allow_scope(&unsafe_words), 2);
         assert!(!is_safe_command(
             "rg --pre-glob '*.pdf' --pre pdftotext pattern"
         ));
@@ -4181,6 +4262,92 @@ mod tests {
             }
             other => panic!("expected NeedsPrompts, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn saved_rules_match_argv_prefixes_not_joined_text() {
+        let mut state = PermissionState::default();
+        state
+            .disallowed_bash_commands
+            .insert("rg private key".to_string());
+        for cmd in ["rg \"private key\" file.rs", "rg private key file.rs"] {
+            assert!(
+                matches!(
+                    evaluate_bash_segments(cmd, &state),
+                    SegmentEvaluation::Reject(_)
+                ),
+                "`{cmd}` must hit the saved deny"
+            );
+        }
+        // Denies saved by the pre-0.1.15 parser keep their raw spelling and
+        // the old space-boundary prefix semantics.
+        let mut state = PermissionState::default();
+        for rule in [
+            "rg \\\"api_key\\\"",
+            "rg pri\"vate\"",
+            "rg secret",
+            "en\"v\" rg",
+        ] {
+            state.disallowed_bash_commands.insert(rule.to_string());
+        }
+        for cmd in [
+            "rg \"\\\"api_key\\\"\" file.rs",
+            "rg pri\"vate\" file.rs",
+            "rg \"secret phrase\" file.rs",
+            "env rg \"secret phrase\" file.rs",
+            "env en\"v\" rg needle file.rs",
+        ] {
+            assert!(
+                matches!(
+                    evaluate_bash_segments(cmd, &state),
+                    SegmentEvaluation::Reject(_)
+                ),
+                "`{cmd}` must hit its legacy deny"
+            );
+        }
+        assert!(!matches!(
+            evaluate_bash_segments("rg secretive file.rs", &state),
+            SegmentEvaluation::Reject(_)
+        ));
+        let mut state = PermissionState::default();
+        state.allowed_bash_commands.insert("rg".to_string());
+        state.allowed_bash_commands.insert("git status".to_string());
+        assert!(matches!(
+            evaluate_bash_segments("git status --short", &state),
+            SegmentEvaluation::AutoAllow { .. }
+        ));
+        assert!(
+            !matches!(
+                evaluate_bash_segments("env \"rg\"\"    \" needle file.rs", &state),
+                SegmentEvaluation::AutoAllow { .. }
+            ),
+            "a padded program name is not the granted `rg`"
+        );
+        // A grant matches token for word: neither one executable word nor a
+        // spaced argument absorbing a granted token can claim it.
+        let mut state = PermissionState::default();
+        state.allowed_bash_commands.insert("git status".to_string());
+        state
+            .allowed_bash_commands
+            .insert("rg --pre ./filter -n".to_string());
+        for cmd in [
+            "env git\" status\" --short",
+            "env rg\" --pre ./filter -n\" needle file.rs",
+            "rg --pre ./filter\" -n\" needle file.rs",
+            "env rg --pre ./filter\" -n\" needle file.rs",
+        ] {
+            assert!(
+                !matches!(
+                    evaluate_bash_segments(cmd, &state),
+                    SegmentEvaluation::AutoAllow { .. }
+                ),
+                "`{cmd}` must not ride a multiword grant"
+            );
+        }
+        assert!(matches!(
+            evaluate_bash_segments("rg --pre ./filter -n needle file.rs", &state),
+            SegmentEvaluation::AutoAllow { .. }
+        ));
     }
 
     #[test]

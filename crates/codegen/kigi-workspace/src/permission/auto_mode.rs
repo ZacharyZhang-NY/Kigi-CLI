@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tree_sitter::Node;
 
 use super::bash_command_splitting::{
-    PlainCommand, is_wrapper_command, strip_wrapper_command, try_parse_shell,
+    PlainCommand, is_wrapper_command, matches_prefix_words, strip_wrapper_command, try_parse_shell,
     try_parse_word_only_commands_sequence, unwrap_wrappers,
 };
 use super::shell_access::{command_words_write_paths, command_write_paths_in_tree};
@@ -424,7 +424,11 @@ fn classify_bash(cmd: &str) -> ClassifierVerdict {
     // (`cargo`/`make`/`pytest`/`python`/`node`, `npm test`/`run`, `uv run
     // <routine>`) execute project-controlled code; this heuristic is a fail-closed
     // FALLBACK and the real safety boundary is the LLM side-query + managed policy.
-    if !cmds.is_empty() && cmds.iter().all(|c| bash_command_is_routine(c.words())) {
+    if !cmds.is_empty()
+        && cmds
+            .iter()
+            .all(|c| bash_command_is_routine(c.words(), c.expandable()))
+    {
         return ClassifierVerdict::Allow;
     }
     ClassifierVerdict::Block
@@ -438,10 +442,11 @@ fn classify_bash(cmd: &str) -> ClassifierVerdict {
 /// classified by [`package_manager_subcommand_is_routine`]: a fail-closed
 /// SAFE-subcommand allowlist (build/test/dep-management Allow; explicit launchers
 /// re-classified; remote / arbitrary-exec / unknown → Block).
-fn bash_command_is_routine(words: &[String]) -> bool {
+fn bash_command_is_routine(words: &[String], expandable: &[bool]) -> bool {
     // Peel canonical (quote-aware) wrappers: env [NAME=VALUE], timeout, nice,
     // stdbuf, ionice, chrt (incl. path-qualified).
     let inner = unwrap_wrappers(words);
+    let inner_expandable = &expandable[words.len() - inner.len()..];
     // A bare wrapper (e.g. `env` printing the environment) or a command that was
     // only env assignments → routine.
     if inner.is_empty() || is_lone_wrapper(inner) {
@@ -454,7 +459,7 @@ fn bash_command_is_routine(words: &[String]) -> bool {
         .to_ascii_lowercase();
     // Package managers: fail-closed safe-subcommand allowlist (None = not a
     // package manager → fall through to the generic find/prefix checks).
-    if let Some(routine) = package_manager_subcommand_is_routine(&head, inner) {
+    if let Some(routine) = package_manager_subcommand_is_routine(&head, inner, inner_expandable) {
         return routine;
     }
     // `find` is routine only without a filesystem-mutating primary.
@@ -490,6 +495,10 @@ fn bash_command_is_routine(words: &[String]) -> bool {
     if head == "gh" {
         return gh_subcommand_is_read_only(inner);
     }
+    // `rg --pre`/`--hostname-bin` execute a program per file; never routine.
+    if head == "rg" && super::manager::rg_has_unsafe_flag(inner, inner_expandable) {
+        return false;
+    }
     // Branch switches and stash workflow are routine; a path operand turns
     // `checkout` into a working-tree discard, so those forms fail closed.
     if head == "git" {
@@ -500,11 +509,9 @@ fn bash_command_is_routine(words: &[String]) -> bool {
             _ => {}
         }
     }
-    let joined = inner.join(" ").to_ascii_lowercase();
-    ROUTINE_PREFIXES.iter().any(|p| {
-        let base = p.trim();
-        joined == base || (joined.starts_with(base) && joined[base.len()..].starts_with(' '))
-    })
+    ROUTINE_PREFIXES
+        .iter()
+        .any(|p| matches_prefix_words(inner, p, true))
 }
 
 const BRANCH_SWITCH_BENIGN_FLAGS: &[&str] = &[
@@ -650,7 +657,11 @@ fn gh_subcommand_is_read_only(inner: &[String]) -> bool {
 /// fetch-and-run via [`is_remote_launcher`], explicit launchers via
 /// [`explicit_launch_target`] (which re-classifies the inner command after
 /// re-checking its writes/env), and everything else against a per-tool allowlist.
-fn package_manager_subcommand_is_routine(prog: &str, inner: &[String]) -> Option<bool> {
+fn package_manager_subcommand_is_routine(
+    prog: &str,
+    inner: &[String],
+    expandable: &[bool],
+) -> Option<bool> {
     if !matches!(
         prog,
         "uv" | "uvx" | "npm" | "npx" | "pnpm" | "yarn" | "rustup"
@@ -672,7 +683,10 @@ fn package_manager_subcommand_is_routine(prog: &str, inner: &[String]) -> Option
             return Some(
                 !command_env_is_unsafe(launched)
                     && !launched_writes_nonsink(launched)
-                    && bash_command_is_routine(launched),
+                    && bash_command_is_routine(
+                        launched,
+                        &expandable[inner.len() - launched.len()..],
+                    ),
             );
         }
         LaunchTarget::NotLauncher => {}
@@ -2494,6 +2508,46 @@ mod tests {
             "timeout 30 git checkout main",
         ] {
             assert_eq!(v(cmd), ClassifierVerdict::Block, "`{cmd}` must block");
+        }
+        for cmd in [
+            "rg --pre ./pre.sh TODO .",
+            "rg --pre=cat TODO .",
+            "rg --hostname-bin=./payload needle",
+            "rg --hostname-bin ./payload needle",
+            "env rg --hostname-bin ./payload needle",
+            "RG --hostname-bin ./payload needle",
+            "timeout 5 RG --pre ./payload needle .",
+            "/usr/bin/rg --pre=cat needle .",
+            "rg --replace -- --pre ./payload needle .",
+            "rg --replace -e --hostname-bin ./payload needle .",
+            "rg -ne -- --hostname-bin ./payload .",
+            "rg -- --hostname-bin .",
+            "rg --host\"\"name-bin ./payload needle .",
+            "rg --p're' ./payload needle .",
+            "rg --{hostname-bin,hostname-bin}=./payload needle file.rs",
+            "rg --{pre,pre}=./payload needle file.rs",
+            "rg --hostname-b[i]n ./payload needle file.rs",
+            "rg ''--hostname-bin ./payload needle file.rs",
+            "rg {--hostname-bin,--hostname-bin}=./payload needle file.rs",
+            "rg \"--host\\\nname-bin\" ./payload needle file.rs",
+            "rg needle *",
+            "env \"rg\"\"    \" needle file.rs",
+            "env rg\" /../payload\" needle file.rs",
+            "\"git status\"",
+        ] {
+            assert_eq!(v(cmd), ClassifierVerdict::Block, "`{cmd}` must block");
+        }
+        for cmd in [
+            "rg -n pattern .",
+            "rg --pre-glob '*.pdf' pattern .",
+            "rg -e needle --replace hostname .",
+            "rg -n \"foo bar\" .",
+            "rg -n 'foo bar' src",
+            "rg -g '*.rs' needle .",
+            "ls *.rs",
+            "grep \"foo bar\" file.txt",
+        ] {
+            assert_eq!(v(cmd), ClassifierVerdict::Allow, "`{cmd}` must be routine");
         }
         for cmd in [
             "git checkout",

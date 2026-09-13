@@ -16,6 +16,8 @@ pub struct BashCommandHighlights {
 #[derive(Debug, Clone)]
 pub struct PlainCommand {
     words: Vec<String>,
+    expandable: Vec<bool>,
+    legacy: Vec<String>,
     span_start: usize,
     span_end: usize,
 }
@@ -25,6 +27,106 @@ impl PlainCommand {
     pub fn words(&self) -> &[String] {
         &self.words
     }
+    /// Per word: an unquoted segment still carries glob, brace, tilde or
+    /// backslash syntax the shell would expand or decode into other argv.
+    pub fn expandable(&self) -> &[bool] {
+        &self.expandable
+    }
+    /// The spelling the pre-0.1.15 parser produced (string content with its
+    /// escapes, concatenations as raw source); saved deny rules from that
+    /// era are matched against it as well.
+    pub fn legacy_words(&self) -> &[String] {
+        &self.legacy
+    }
+}
+
+/// `pattern` (`git status`) matches when its whitespace-separated words equal
+/// the leading argv elements. Matching per element keeps a decoded word with
+/// inner whitespace (`rg    `, `rg /../x`) from posing as a safe prefix.
+pub(crate) fn matches_prefix_words(words: &[String], pattern: &str, ignore_case: bool) -> bool {
+    let pat: Vec<&str> = pattern.split_whitespace().collect();
+    !pat.is_empty()
+        && words.len() >= pat.len()
+        && pat.iter().zip(words).all(|(p, w)| {
+            if ignore_case {
+                w.eq_ignore_ascii_case(p)
+            } else {
+                w == p
+            }
+        })
+}
+
+/// Unquoted text the shell would still expand or decode before exec:
+/// globs, brace lists, tilde, backslash escapes.
+pub(crate) fn unquoted_may_expand(text: &str) -> bool {
+    text.contains(['*', '?', '[', ']', '{', '}', '~', '\\'])
+}
+
+/// Bash's double-quote decoding: a backslash escapes only `$`, `` ` ``,
+/// `"`, `\\` and newline (`\<newline>` is removed); any other backslash
+/// stays literal.
+fn decode_double_quoted(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.peek() {
+            Some('\n') => {
+                chars.next();
+            }
+            Some(&escaped) if matches!(escaped, '$' | '`' | '"' | '\\') => {
+                out.push(escaped);
+                chars.next();
+            }
+            _ => out.push('\\'),
+        }
+    }
+    out
+}
+
+/// Decoded content of a plain double-quoted string: `"`, any number of
+/// `string_content` parts, `"`. An expansion child rejects the string. The
+/// text is the node's own source minus the two quote characters:
+/// tree-sitter leaves literal newlines in the gaps between
+/// `string_content` children and may fold whitespace into the closing
+/// quote token, so neither the children nor the token bounds are the text.
+fn simple_string_content(node: Node, src: &str) -> Option<String> {
+    let count = node.child_count();
+    if count < 2
+        || node.child(0)?.kind() != "\""
+        || node.child(count - 1)?.kind() != "\""
+        || (1..count - 1).any(|i| {
+            node.child(i)
+                .is_none_or(|part| part.kind() != "string_content")
+        })
+    {
+        return None;
+    }
+    let text = node.utf8_text(src.as_bytes()).ok()?;
+    Some(decode_double_quoted(
+        text.strip_prefix('"')?.strip_suffix('"')?,
+    ))
+}
+
+/// What the old parser stored for a double-quoted string: its
+/// `string_content` text with escapes intact, or the raw source when the
+/// content is split (the old parser rejected those, so nothing was saved).
+fn legacy_string_spelling(node: Node, src: &str) -> Option<String> {
+    let text = match node.child_count() {
+        3 => node.child(1)?.utf8_text(src.as_bytes()).ok()?,
+        _ => node.utf8_text(src.as_bytes()).ok()?,
+    };
+    Some(text.to_owned())
+}
+
+fn raw_string_content<'a>(node: Node<'a>, src: &'a str) -> Option<&'a str> {
+    node.utf8_text(src.as_bytes())
+        .ok()?
+        .strip_prefix('\'')?
+        .strip_suffix('\'')
 }
 
 /// Parse the provided bash source using tree-sitter-bash, returning a Tree on
@@ -426,6 +528,8 @@ fn parse_plain_command_from_node(cmd: Node, src: &str) -> Option<PlainCommand> {
         return None;
     }
     let mut words = Vec::new();
+    let mut expandable = Vec::new();
+    let mut legacy = Vec::new();
     let mut cursor = cmd.walk();
 
     let mut span_start: Option<usize> = None;
@@ -450,6 +554,8 @@ fn parse_plain_command_from_node(cmd: Node, src: &str) -> Option<PlainCommand> {
                 }
                 span_end = Some(word_node.end_byte());
 
+                expandable.push(unquoted_may_expand(&text));
+                legacy.push(text.clone());
                 words.push(text);
             }
             "word" | "number" => {
@@ -460,55 +566,62 @@ fn parse_plain_command_from_node(cmd: Node, src: &str) -> Option<PlainCommand> {
                 }
                 span_end = Some(child.end_byte());
 
+                expandable.push(unquoted_may_expand(&text));
+                legacy.push(text.clone());
                 words.push(text);
             }
             "string" => {
-                // Allow only simple double-quoted strings with plain content.
-                if child.child_count() == 3
-                    && child.child(0)?.kind() == "\""
-                    && child.child(1)?.kind() == "string_content"
-                    && child.child(2)?.kind() == "\""
-                {
-                    let content_node = child.child(1)?;
-                    let text = content_node.utf8_text(src.as_bytes()).ok()?.to_owned();
+                // Only a plain double-quoted string; interpolation rejects.
+                let text = simple_string_content(child, src)?;
 
-                    if span_start.is_none() {
-                        // Highlight whole quoted string in the original script,
-                        // so span uses the outer node.
-                        span_start = Some(child.start_byte());
-                    }
-                    span_end = Some(child.end_byte());
-
-                    words.push(text);
-                } else {
-                    // Reject complex / interpolated strings
-                    return None;
+                if span_start.is_none() {
+                    // Highlight whole quoted string in the original script,
+                    // so span uses the outer node.
+                    span_start = Some(child.start_byte());
                 }
+                span_end = Some(child.end_byte());
+
+                expandable.push(false);
+                legacy.push(legacy_string_spelling(child, src)?);
+                words.push(text);
             }
             "raw_string" => {
-                let raw_string = child.utf8_text(src.as_bytes()).ok()?;
-                let stripped = raw_string
-                    .strip_prefix('\'')
-                    .and_then(|s| s.strip_suffix('\''));
-                {
-                    let s = stripped?;
-                    if span_start.is_none() {
-                        span_start = Some(child.start_byte());
-                    }
-                    span_end = Some(child.end_byte());
-
-                    words.push(s.to_owned());
+                let text = raw_string_content(child, src)?.to_owned();
+                if span_start.is_none() {
+                    span_start = Some(child.start_byte());
                 }
+                span_end = Some(child.end_byte());
+
+                expandable.push(false);
+                legacy.push(text.clone());
+                words.push(text);
             }
             "concatenation" => {
-                // Handle concatenation nodes (e.g., {} in find -exec)
-                let text = child.utf8_text(src.as_bytes()).ok()?.to_owned();
+                // Decode the segments (`--host""name-bin` → `--hostname-bin`)
+                // so allowlists compare what the shell hands the program.
+                let mut text = String::new();
+                let mut may_expand = false;
+                let mut parts = child.walk();
+                for part in child.named_children(&mut parts) {
+                    match part.kind() {
+                        "word" | "number" => {
+                            let t = part.utf8_text(src.as_bytes()).ok()?;
+                            may_expand |= unquoted_may_expand(t);
+                            text.push_str(t);
+                        }
+                        "string" => text.push_str(&simple_string_content(part, src)?),
+                        "raw_string" => text.push_str(raw_string_content(part, src)?),
+                        _ => return None,
+                    }
+                }
 
                 if span_start.is_none() {
                     span_start = Some(child.start_byte());
                 }
                 span_end = Some(child.end_byte());
 
+                expandable.push(may_expand);
+                legacy.push(child.utf8_text(src.as_bytes()).ok()?.to_owned());
                 words.push(text);
             }
             _ => return None,
@@ -520,6 +633,8 @@ fn parse_plain_command_from_node(cmd: Node, src: &str) -> Option<PlainCommand> {
 
     Some(PlainCommand {
         words,
+        expandable,
+        legacy,
         span_start,
         span_end,
     })
@@ -783,7 +898,7 @@ mod tests {
                 highlighted_words: vec![
                     "python3".to_owned(),
                     "-c".to_owned(),
-                    "some text\\\" here ".to_owned()
+                    "some text\" here ".to_owned()
                 ],
                 suffix: vec![
                     "|".to_owned(),
@@ -878,8 +993,7 @@ mod tests {
                 highlighted_words: vec![
                     "python".to_owned(),
                     "-c".to_owned(),
-                    "\"\n        import os\n        os.environ.get(\"something\")\n        \""
-                        .to_owned()
+                    "\n        import os\n        os.environ.get(something)\n        ".to_owned()
                 ],
                 suffix: vec![],
             })
@@ -1243,5 +1357,66 @@ mod tests {
             !ops.iter().any(|o| *o == "|"),
             "jq `|` inside quotes must not be a soft-break"
         );
+    }
+}
+
+#[cfg(test)]
+mod decoded_word_tests {
+    use super::all_commands_from_script;
+
+    fn parse(script: &str) -> (Vec<String>, Vec<bool>) {
+        let cmds = all_commands_from_script(script).expect("word-only script");
+        let cmd = &cmds[0];
+        (cmd.words().to_vec(), cmd.expandable().to_vec())
+    }
+
+    #[test]
+    fn concatenations_decode_to_what_the_shell_passes() {
+        for (script, decoded) in [
+            ("rg --host\"\"name-bin x", "--hostname-bin"),
+            ("rg ''--hostname-bin x", "--hostname-bin"),
+            ("rg --p're' x", "--pre"),
+            ("rg --pre=\"a b\" x", "--pre=a b"),
+            ("rg \"--host\\\nname-bin\" x", "--hostname-bin"),
+            ("rg --host\"\\\nname-bin\" x", "--hostname-bin"),
+            ("rg \"a\\\"b\\$c\\d\" x", "a\"b$c\\d"),
+            ("rg \"foo\nbar\" x", "foo\nbar"),
+            ("rg \"  two  words \" x", "  two  words "),
+            ("rg \"    \" x", "    "),
+            ("rg \"foo\n    \" x", "foo\n    "),
+            ("env \"rg\"\"    \" needle x", "rg    "),
+        ] {
+            let (words, expandable) = parse(script);
+            assert_eq!(words[1], decoded, "{script}");
+            assert!(!expandable[1], "{script}");
+        }
+    }
+
+    #[test]
+    fn unquoted_expansion_syntax_is_flagged_and_quoted_is_not() {
+        let (words, expandable) = parse("rg --{pre,pre}=x {--pre,--pre} *.rs -g '*.rs' \"?\"");
+        assert_eq!(words[1], "--{pre,pre}=x");
+        assert_eq!(
+            expandable,
+            vec![false, true, true, true, false, false, false]
+        );
+        let (_, expandable) = parse("cat ~/notes.txt");
+        assert!(expandable[1]);
+    }
+
+    #[test]
+    fn legacy_spelling_keeps_escapes_and_raw_concatenations() {
+        let cmds = all_commands_from_script("rg \"\\\"api_key\\\"\" pri\"vate\" x").unwrap();
+        assert_eq!(cmds[0].words(), ["rg", "\"api_key\"", "private", "x"]);
+        assert_eq!(
+            cmds[0].legacy_words(),
+            ["rg", "\\\"api_key\\\"", "pri\"vate\"", "x"]
+        );
+    }
+
+    #[test]
+    fn a_quoted_newline_in_the_head_is_not_the_bare_program() {
+        let (words, _) = parse("env \"r\ng\" needle file.rs");
+        assert_eq!(words[1], "r\ng");
     }
 }
