@@ -4,6 +4,7 @@
 //! `spawn_kigi_shell`, sends the ACP lifecycle (init → auth → session → prompt),
 //! streams text to stdout, and exits cleanly via `CancellationToken`.
 
+use crate::best_effort_stderr::eprint_line;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -459,7 +460,7 @@ impl HeadlessEmitter {
 
     fn on_error(&self, message: &str) {
         match self.format {
-            OutputFormat::Plain => eprintln!("{message}"),
+            OutputFormat::Plain => eprint_line(message),
             OutputFormat::StreamingJson | OutputFormat::Json => {
                 let mut err = serde_json::json!({"type":"error","message": message});
                 if let Some(usage) = &self.usage {
@@ -1276,7 +1277,7 @@ pub async fn run_single_turn(
                 == Some("max_turns_reached");
             if is_max_turns {
                 match emitter.format {
-                    OutputFormat::Plain => eprintln!("Max turns reached"),
+                    OutputFormat::Plain => eprint_line("Max turns reached"),
                     OutputFormat::StreamingJson => {
                         println!("{}", serde_json::json!({"type": "max_turns_reached"}))
                     }
@@ -1644,7 +1645,9 @@ fn handle_ext_notification(
                 );
             }
             OutputFormat::Plain => {
-                eprintln!("Auto-compacting conversation ({percentage}% full)...");
+                eprint_line(&format!(
+                    "Auto-compacting conversation ({percentage}% full)..."
+                ));
             }
             OutputFormat::Json => {}
         },
@@ -1652,7 +1655,7 @@ fn handle_ext_notification(
             OutputFormat::StreamingJson => {
                 println!("{}", serde_json::json!({"type": "auto_compact_completed"}));
             }
-            OutputFormat::Plain => eprintln!("Conversation compacted."),
+            OutputFormat::Plain => eprint_line("Conversation compacted."),
             OutputFormat::Json => {}
         },
         XaiUpdate::AutoCompactFailed { error } => match format {
@@ -1664,9 +1667,9 @@ fn handle_ext_notification(
             }
             OutputFormat::Plain => {
                 if error.trim().is_empty() {
-                    eprintln!("Auto-compact failed.");
+                    eprint_line("Auto-compact failed.");
                 } else {
-                    eprintln!("Auto-compact failed: {error}");
+                    eprint_line(&format!("Auto-compact failed: {error}"));
                 }
             }
             OutputFormat::Json => {}
@@ -1675,7 +1678,7 @@ fn handle_ext_notification(
             OutputFormat::StreamingJson => {
                 println!("{}", serde_json::json!({"type": "auto_compact_cancelled"}));
             }
-            OutputFormat::Plain => eprintln!("Auto-compact cancelled."),
+            OutputFormat::Plain => eprint_line("Auto-compact cancelled."),
             OutputFormat::Json => {}
         },
         XaiUpdate::AutoContinueCompleted { total_tokens } => match format {
@@ -1685,7 +1688,7 @@ fn handle_ext_notification(
                     serde_json::json!({"type": "auto_continue_completed", "total_tokens": total_tokens})
                 );
             }
-            OutputFormat::Plain => eprintln!("Resumed after compaction."),
+            OutputFormat::Plain => eprint_line("Resumed after compaction."),
             OutputFormat::Json => {}
         },
         XaiUpdate::ImageCompressed { message } => match format {
@@ -1695,7 +1698,7 @@ fn handle_ext_notification(
                     serde_json::json!({"type": "image_compressed", "message": message})
                 );
             }
-            OutputFormat::Plain => eprintln!("{message}"),
+            OutputFormat::Plain => eprint_line(&message),
             OutputFormat::Json => {}
         },
         XaiUpdate::SubagentSpawned { subagent_id } => {

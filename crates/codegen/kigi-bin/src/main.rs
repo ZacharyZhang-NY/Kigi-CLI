@@ -146,27 +146,33 @@ async fn run_setup_command(json: bool) {
                     .expect("setup report has no non-serializable values");
                 println!("{out}");
                 if !report.configured {
-                    eprintln!(
-                        "Your team doesn't have a managed configuration yet. Ask a team admin to provision one."
+                    kigi_tui::best_effort_stderr::eprint_line(
+                        "Your team doesn't have a managed configuration yet. Ask a team admin to provision one.",
                     );
                 }
             }
             Err(e) => {
-                eprintln!("Couldn't fetch managed configuration. {e}");
+                kigi_tui::best_effort_stderr::eprint_line(&format!(
+                    "Couldn't fetch managed configuration. {e}"
+                ));
                 std::process::exit(1);
             }
         }
         return;
     }
     match managed_config::run_setup().await {
-        SetupOutcome::Installed => eprintln!("Applied managed configuration."),
+        SetupOutcome::Installed => {
+            kigi_tui::best_effort_stderr::eprint_line("Applied managed configuration.")
+        }
         SetupOutcome::NothingConfigured => {
-            eprintln!(
-                "Your team doesn't have a managed configuration yet. Ask a team admin to provision one."
+            kigi_tui::best_effort_stderr::eprint_line(
+                "Your team doesn't have a managed configuration yet. Ask a team admin to provision one.",
             );
         }
         SetupOutcome::Failed(e) => {
-            eprintln!("Couldn't apply managed configuration. {e}");
+            kigi_tui::best_effort_stderr::eprint_line(&format!(
+                "Couldn't apply managed configuration. {e}"
+            ));
             std::process::exit(1);
         }
     }
@@ -208,8 +214,8 @@ async fn run_leader_mgmt(args: LeaderMgmtArgs) -> Result<()> {
                 println!("{info:#?}");
             } else {
                 print_leader_descriptor(&descriptor);
-                eprintln!(
-                    "  (detailed info unavailable — leader does not advertise control capabilities)"
+                kigi_tui::best_effort_stderr::eprint_line(
+                    "  (detailed info unavailable — leader does not advertise control capabilities)",
                 );
             }
             client.cancel();
@@ -220,7 +226,7 @@ async fn run_leader_mgmt(args: LeaderMgmtArgs) -> Result<()> {
 async fn kill_leaders() -> Result<()> {
     let leaders = kigi_shell::leader::discover_leaders().await;
     if leaders.is_empty() {
-        eprintln!("No leader candidates found.");
+        kigi_tui::best_effort_stderr::eprint_line("No leader candidates found.");
         return Ok(());
     }
     let mut killed = 0u32;
@@ -231,7 +237,9 @@ async fn kill_leaders() -> Result<()> {
         };
         if !kigi_shell::util::is_kigi_process(pid) {
             if let Some(ref lock) = d.lock_path {
-                eprintln!("  PID {pid} is not a kigi process, removing stale lock");
+                kigi_tui::best_effort_stderr::eprint_line(&format!(
+                    "  PID {pid} is not a kigi process, removing stale lock"
+                ));
                 let _ = std::fs::remove_file(lock);
                 cleaned += 1;
             }
@@ -240,19 +248,23 @@ async fn kill_leaders() -> Result<()> {
             }
             continue;
         }
-        eprintln!("  Killing leader PID {pid}");
+        kigi_tui::best_effort_stderr::eprint_line(&format!("  Killing leader PID {pid}"));
         if let Err(e) = kigi_shell::util::kill_process_by_pid(pid) {
-            eprintln!("  warning: failed to terminate PID {pid}: {e}");
+            kigi_tui::best_effort_stderr::eprint_line(&format!(
+                "  warning: failed to terminate PID {pid}: {e}"
+            ));
             continue;
         }
         killed += 1;
     }
     if killed > 0 {
-        eprintln!("Killed {killed} leader process(es).");
+        kigi_tui::best_effort_stderr::eprint_line(&format!("Killed {killed} leader process(es)."));
     } else if cleaned > 0 {
-        eprintln!("No live leader processes found (cleaned up {cleaned} stale lock(s)).");
+        kigi_tui::best_effort_stderr::eprint_line(&format!(
+            "No live leader processes found (cleaned up {cleaned} stale lock(s))."
+        ));
     } else {
-        eprintln!("No live leader processes found.");
+        kigi_tui::best_effort_stderr::eprint_line("No live leader processes found.");
     }
     Ok(())
 }
@@ -295,7 +307,7 @@ fn print_leader_descriptor(d: &LeaderDescriptor) {
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "?".into());
     let state = format!("{:?}", d.classification);
-    eprintln!("  PID {pid} ({state}) -- {sock}");
+    kigi_tui::best_effort_stderr::eprint_line(&format!("  PID {pid} ({state}) -- {sock}"));
 }
 fn leader_descriptor_json(d: &LeaderDescriptor) -> serde_json::Value {
     serde_json::json!(
@@ -1233,10 +1245,12 @@ fn main() {
             // A host out of threads (RLIMIT_NPROC / pids.max) is an
             // environment problem, not a bug — report it, don't panic.
             kigi_tty_utils::restore_native_stderr();
-            eprintln!("Error: failed to start the async runtime: {e}");
-            eprintln!(
+            kigi_tui::best_effort_stderr::eprint_line(&format!(
+                "Error: failed to start the async runtime: {e}"
+            ));
+            kigi_tui::best_effort_stderr::eprint_line(
                 "The host may be out of threads (RLIMIT_NPROC or the cgroup pids ceiling); \
-                 close other processes or raise the limit, then retry."
+                 close other processes or raise the limit, then retry.",
             );
             std::process::exit(1);
         }
@@ -1245,7 +1259,8 @@ fn main() {
     kigi_log::debug_log::flush();
     if let Err(e) = result {
         kigi_tty_utils::restore_native_stderr();
-        eprintln!("Error: {e:#}");
+        // fd 2 may be a closed pane: one attempt, never a panic under panic = "abort".
+        kigi_tui::best_effort_stderr::eprint_line(&format!("Error: {e:#}"));
         std::process::exit(1);
     }
 }
@@ -1603,9 +1618,13 @@ async fn async_main() -> Result<()> {
             // A terminal that stopped reading at teardown would block these prints.
             if exit.terminal_reading {
                 if installed {
-                    eprintln!("Update installed. Run `kigi` to start.");
+                    kigi_tui::best_effort_stderr::eprint_line(
+                        "Update installed. Run `kigi` to start.",
+                    );
                 } else {
-                    eprintln!("Update did not complete. Run `kigi update` to retry.");
+                    kigi_tui::best_effort_stderr::eprint_line(
+                        "Update did not complete. Run `kigi update` to retry.",
+                    );
                 }
             }
             Ok(())
@@ -1634,7 +1653,7 @@ async fn finish_update_on_exit(
             return false;
         }
         if let Some(reason) = reason {
-            eprintln!("{reason}");
+            kigi_tui::best_effort_stderr::eprint_line(&reason);
         }
         auto_update::run_update_if_available(
             auto_update::UpdateRunMode::Blocking,
@@ -1647,7 +1666,9 @@ async fn finish_update_on_exit(
     match adopted {
         Some(handle) => {
             if terminal_reading {
-                eprintln!("Waiting for the update download to finish...");
+                kigi_tui::best_effort_stderr::eprint_line(
+                    "Waiting for the update download to finish...",
+                );
             }
             match handle.await {
                 Ok(Ok(status)) if status.success() => true,
@@ -1821,7 +1842,9 @@ async fn signal_leaders_to_relaunch(installed_version: &str) {
                 to_version,
                 ..
             })) => {
-                eprintln!("  ↻ Relaunching shared session (leader {from_version} → {to_version})…");
+                kigi_tui::best_effort_stderr::eprint_line(&format!(
+                    "  ↻ Relaunching shared session (leader {from_version} → {to_version})…"
+                ));
             }
             Ok(Ok(kigi_shell::leader::ControlPayload::RelaunchDeclined { reason })) => {
                 tracing::debug!(% reason, "Leader declined relaunch");
