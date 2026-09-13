@@ -576,9 +576,8 @@
     }
 
     #[test]
-    fn child_compact_started_does_not_reset_context_used() {
-        // Sibling variants in the same outer arm must not touch the numerator;
-        // guards against accidental widening of the AutoCompactCompleted gate.
+    fn child_compact_started_refreshes_context_used() {
+        // AutoCompactStarted carries the count the trigger fired on; the child bar must show it.
         let mut agent = make_agent(Some("root-sess"));
         let child_sid = "child-sess-3";
         agent
@@ -603,7 +602,17 @@
         let child_view = agent.subagent_views.get(child_sid).unwrap();
         assert_eq!(
             child_view.context_state.as_ref().map(|c| c.used),
-            Some(90_000)
+            Some(95_000)
+        );
+        // A sibling variant without a count leaves the numerator alone.
+        let cancelled = XaiSessionUpdate::AutoCompactCancelled {
+            reason: "user".into(),
+        };
+        let _ = handle_child_session_notification(cancelled, child_sid, &mut agent, false);
+        let child_view = agent.subagent_views.get(child_sid).unwrap();
+        assert_eq!(
+            child_view.context_state.as_ref().map(|c| c.used),
+            Some(95_000)
         );
     }
 
@@ -693,5 +702,30 @@
             !session.model_incompatible,
             "non-encrypted_content error types must not set model_incompatible"
         );
+
     }
 
+    /// The banner's count must also refresh the context bar.
+    #[test]
+    fn auto_compact_started_refreshes_the_context_bar() {
+        let mut app = make_app_with_agent("sess-1");
+        let id = AgentId(0);
+        app.agents.get_mut(&id).unwrap().apply_context_used(15_000, 262_144);
+        let payload = SessionNotification {
+            session_id: acp::SessionId::new("sess-1"),
+            update: XaiSessionUpdate::AutoCompactStarted {
+                tokens_used: 90_000,
+                context_window: 262_144,
+                percentage: 34,
+                reason: "threshold".into(),
+            },
+            meta: None,
+        };
+        let notif = acp::ExtNotification::new(
+            "kigi/session/update",
+            std::sync::Arc::from(serde_json::value::to_raw_value(&payload).unwrap()),
+        );
+        let _ = handle_ext_notification(&notif, &mut app);
+        let bar = app.agents[&id].context_state.as_ref().map(|c| (c.used, c.total));
+        assert_eq!(bar, Some((90_000, 262_144)));
+    }

@@ -45,6 +45,14 @@ pub(super) fn refresh_context_used(view: &mut AgentView, used: u64) {
     let total = view.session.models.get_context_window().unwrap_or(0);
     view.apply_context_used(used, total);
 }
+/// The count a compaction lifecycle update carries for the context bar: the banner's "N% full" must not sit next to a stale pre-turn number.
+pub(super) fn compaction_context_refresh(update: &XaiSessionUpdate) -> Option<u64> {
+    match update {
+        XaiSessionUpdate::AutoCompactStarted { tokens_used, .. } => Some(*tokens_used),
+        XaiSessionUpdate::AutoCompactCompleted { tokens_after, .. } => Some(*tokens_after),
+        _ => None,
+    }
+}
 /// Refresh the bar and record `used` as the confirmed count for a pending
 /// compaction message; call only from the `meta.totalTokens` path.
 pub(super) fn confirm_context_used(view: &mut AgentView, used: u64) {
@@ -197,8 +205,10 @@ pub(super) fn handle_session_notification(notif: &acp::ExtNotification, app: &mu
                 &mut agent.scrollback,
                 is_api_key_auth,
             );
-            if let XaiSessionUpdate::AutoCompactCompleted { tokens_after, .. } = update {
-                refresh_context_used(agent, *tokens_after);
+            if let Some(used) = compaction_context_refresh(update) {
+                refresh_context_used(agent, used);
+            }
+            if let XaiSessionUpdate::AutoCompactCompleted { .. } = update {
                 agent.todo.update_todos(Vec::new());
             }
             changed
@@ -1071,10 +1081,7 @@ pub(super) fn handle_child_session_notification(
         | XaiSessionUpdate::AutoCompactFailed { .. }
         | XaiSessionUpdate::AutoCompactCancelled { .. }
         | XaiSessionUpdate::RetryState(_) => {
-            let compact_tokens = match &update {
-                XaiSessionUpdate::AutoCompactCompleted { tokens_after, .. } => Some(*tokens_after),
-                _ => None,
-            };
+            let compact_tokens = compaction_context_refresh(&update);
             let mut changed = false;
             if let Some(child_view) = agent.subagent_views.get_mut(child_sid) {
                 changed = apply_session_event(
