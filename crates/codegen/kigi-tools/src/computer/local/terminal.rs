@@ -634,7 +634,8 @@ impl LocalTerminalActor {
         #[cfg(target_os = "linux")]
         if kigi_sandbox::should_restrict_child_network() {
             unsafe {
-                cmd.pre_exec(|| kigi_sandbox::child_net::install_child_network_filter());
+                let filter = kigi_sandbox::child_net::prebuilt_child_network_filter();
+                cmd.pre_exec(move || kigi_sandbox::child_net::install_child_network_filter(filter));
             }
         }
 
@@ -2646,7 +2647,8 @@ fn spawn_shell_command(
         #[cfg(target_os = "linux")]
         if kigi_sandbox::should_restrict_child_network() {
             unsafe {
-                cmd.pre_exec(|| kigi_sandbox::child_net::install_child_network_filter());
+                let filter = kigi_sandbox::child_net::prebuilt_child_network_filter();
+                cmd.pre_exec(move || kigi_sandbox::child_net::install_child_network_filter(filter));
             }
         }
         cmd
