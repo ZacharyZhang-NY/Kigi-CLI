@@ -32,6 +32,9 @@ use rmcp::{
 
 use crate::oauth_config::McpOAuthConfig;
 
+mod cancel_aware;
+use cancel_aware::call_tool_cancel_aware;
+
 use kigi_tools::types::{
     output::{MCPOutput, MCPOutputDetails, ToolOutput},
     tool::{ToolKind, ToolNamespace},
@@ -1599,12 +1602,24 @@ impl McpErasedTool {
         let mut params = CallToolRequestParams::new(self.tool.name.clone());
         params.arguments = raw.as_object().cloned();
 
-        let result =
-            tokio::time::timeout(timeout_duration, mcp_service.call_tool(params.clone())).await;
-
-        match result {
-            Ok(Ok(call_result)) => Ok(call_result),
-            Ok(Err(service_err))
+        match call_tool_cancel_aware(&mcp_service, params.clone(), timeout_duration).await {
+            Ok(call_result) => Ok(call_result),
+            Err(ServiceError::Timeout { .. }) => {
+                *is_timeout = true;
+                // Reset for the next call but don't retry — a slow side-effecting tool must not run twice.
+                if client.is_http() && !*reconnect_attempted {
+                    client.reset_transport().await;
+                    *reconnect_attempted = true;
+                }
+                Err(kigi_tool_runtime::ToolError::custom(
+                    "process_manager",
+                    format!(
+                        "MCP tool '{}' timed out after {} seconds",
+                        self.tool.name, tool_timeout
+                    ),
+                ))
+            }
+            Err(service_err)
                 if should_recover_service_error(
                     &service_err,
                     client.is_http(),
@@ -1623,25 +1638,10 @@ impl McpErasedTool {
                 )
                 .await
             }
-            Ok(Err(e)) => Err(kigi_tool_runtime::ToolError::custom(
+            Err(e) => Err(kigi_tool_runtime::ToolError::custom(
                 "process_manager",
                 e.to_string(),
             )),
-            Err(_) => {
-                *is_timeout = true;
-                // Reset for the next call but don't retry — a slow side-effecting tool must not run twice.
-                if client.is_http() && !*reconnect_attempted {
-                    client.reset_transport().await;
-                    *reconnect_attempted = true;
-                }
-                Err(kigi_tool_runtime::ToolError::custom(
-                    "process_manager",
-                    format!(
-                        "MCP tool '{}' timed out after {} seconds",
-                        self.tool.name, tool_timeout
-                    ),
-                ))
-            }
         }
     }
 
@@ -1692,13 +1692,9 @@ impl McpErasedTool {
                 ));
             }
         };
-        match tokio::time::timeout(timeout_duration, mcp_service.call_tool(params)).await {
-            Ok(Ok(call_result)) => Ok(call_result),
-            Ok(Err(retry_err)) => Err(kigi_tool_runtime::ToolError::custom(
-                "process_manager",
-                retry_err.to_string(),
-            )),
-            Err(_) => {
+        match call_tool_cancel_aware(&mcp_service, params, timeout_duration).await {
+            Ok(call_result) => Ok(call_result),
+            Err(ServiceError::Timeout { .. }) => {
                 *is_timeout = true;
                 Err(kigi_tool_runtime::ToolError::custom(
                     "process_manager",
@@ -1708,6 +1704,10 @@ impl McpErasedTool {
                     ),
                 ))
             }
+            Err(retry_err) => Err(kigi_tool_runtime::ToolError::custom(
+                "process_manager",
+                retry_err.to_string(),
+            )),
         }
     }
 }
@@ -6223,11 +6223,17 @@ mod tests {
         let mut reconnect = false;
         let mut is_timeout = false;
         let raw = serde_json::json!({});
+        let started = std::time::Instant::now();
         let err = tool
             .try_call_tool(&client, &raw, &mut reconnect, &mut is_timeout, &ew)
             .await
             .expect_err("call must time out");
 
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(2500),
+            "cancel must not wait out the 3s hang: {:?}",
+            started.elapsed()
+        );
         assert!(err.to_string().contains("timed out"), "got: {err}");
         assert!(is_timeout, "is_timeout must be set");
         assert!(reconnect, "timeout arm flags the reconnect after resetting");

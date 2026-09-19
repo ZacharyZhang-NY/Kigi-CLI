@@ -30,6 +30,14 @@ that stops reading still blocks exit-path prints behind std's stderr lock
 builder re-checks `Path::exists("/data")` and can omit the devbox bind on
 a stat error that the profile classification treated as present.
 
+Known limitation left by the 0.1.16 sync: `notifications/cancelled` for a
+timed-out MCP call cannot reach a streamable-HTTP server that answers
+`tools/call` with a plain JSON body. rmcp 2.2.0's HTTP worker awaits each
+POST in turn, so the cancel queues behind the hung call;
+`servers/cancel_aware.rs` waits 500 ms, warns, and the transport reset
+then drops the connection. stdio and SSE-mode servers get the cancel.
+The cure is rmcp 3.x (upstream runs 3.2), a major bump not yet taken.
+
 ## Hard constraints
 
 - **Zero egress**: only `auth.kimi.com`, `api.kimi.com`, `api.moonshot.cn`,
