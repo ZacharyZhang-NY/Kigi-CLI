@@ -544,13 +544,16 @@ mod attachments_protocol {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+mod osascript_probe;
+
 // macOS: subprocess-based clipboard (no AppKit linkage)
 #[cfg(target_os = "macos")]
 mod platform {
     use std::process::{Command, Stdio};
     use std::sync::OnceLock;
 
-    use super::attachments_protocol::{FURL_MARKER, IMAGE_MARKER, parse_attachments_output};
+    use super::osascript_probe::{ProbeTemps, osascript_attachments, read_probe_raster};
     use super::{ClipboardAttachments, ImageData};
 
     // Fast pasteboard probes (NSPasteboard via lazy dlopen)
@@ -759,153 +762,15 @@ mod platform {
         Ok(output.stdout)
     }
 
-    fn attachments_probe_temp_paths() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf)
-    {
-        let temp_dir = std::env::temp_dir();
-        (
-            temp_dir.join("kigi-clipboard-probe.png"),
-            temp_dir.join("kigi-clipboard-probe.tiff"),
-            temp_dir.join("kigi-clipboard-probe.jpg"),
-        )
-    }
-
-    fn read_clipboard_image_from_class(
-        class: &str,
-        path_png: &std::path::Path,
-        path_tiff: &std::path::Path,
-        path_jpg: &std::path::Path,
-    ) -> anyhow::Result<Option<ImageData>> {
-        let (temp_path, mime) = match class {
-            "PNGf" => (path_png, "image/png"),
-            "TIFF" => (path_tiff, "image/tiff"),
-            "JPEG" => (path_jpg, "image/jpeg"),
-            _ => return Ok(None),
-        };
-
-        let data = match std::fs::read(temp_path) {
-            Ok(bytes) if !bytes.is_empty() => bytes,
-            Ok(_) => {
-                let _ = std::fs::remove_file(temp_path);
-                return Ok(None);
-            }
-            Err(e) => {
-                let _ = std::fs::remove_file(temp_path);
-                return Err(anyhow::anyhow!("failed to read clipboard temp file: {e}"));
-            }
-        };
-
-        let _ = std::fs::remove_file(temp_path);
-        Ok(Some(ImageData {
-            data,
-            mime_type: mime.to_owned(),
-        }))
-    }
-
-    fn remove_attachment_probe_temps(
-        path_png: &std::path::Path,
-        path_tiff: &std::path::Path,
-        path_jpg: &std::path::Path,
-    ) {
-        let _ = std::fs::remove_file(path_png);
-        let _ = std::fs::remove_file(path_tiff);
-        let _ = std::fs::remove_file(path_jpg);
-    }
-
-    fn attachments_osascript(
-        path_png: &std::path::Path,
-        path_tiff: &std::path::Path,
-        path_jpg: &std::path::Path,
-    ) -> String {
-        format!(
-            "set furlOut to \"none\"\n\
-             try\n\
-             set urlList to the clipboard as list\n\
-             set out to \"\"\n\
-             repeat with u in urlList\n\
-             try\n\
-             set itemRef to contents of u as \u{00AB}class furl\u{00BB}\n\
-             set out to out & POSIX path of itemRef & \"\\n\"\n\
-             end try\n\
-             end repeat\n\
-             if out is not \"\" then\n\
-             set furlOut to out\n\
-             else\n\
-             try\n\
-             set urlRef to the clipboard as \u{00AB}class furl\u{00BB}\n\
-             set furlOut to POSIX path of urlRef\n\
-             on error\n\
-             end try\n\
-             end if\n\
-             on error\n\
-             try\n\
-             set urlRef to the clipboard as \u{00AB}class furl\u{00BB}\n\
-             set furlOut to POSIX path of urlRef\n\
-             on error\n\
-             end try\n\
-             end try\n\
-             set imageOut to \"NONE\"\n\
-             if furlOut is \"none\" then\n\
-             try\n\
-             set imgData to the clipboard as \u{00AB}class PNGf\u{00BB}\n\
-             set filePath to POSIX file \"{png}\" as text\n\
-             set fRef to open for access file filePath with write permission\n\
-             set eof of fRef to 0\n\
-             write imgData to fRef\n\
-             close access fRef\n\
-             set imageOut to \"PNGf\"\n\
-             on error\n\
-             try\n\
-             set imgData to the clipboard as \u{00AB}class TIFF\u{00BB}\n\
-             set filePath to POSIX file \"{tiff}\" as text\n\
-             set fRef to open for access file filePath with write permission\n\
-             set eof of fRef to 0\n\
-             write imgData to fRef\n\
-             close access fRef\n\
-             set imageOut to \"TIFF\"\n\
-             on error\n\
-             try\n\
-             set imgData to the clipboard as \u{00AB}class JPEG\u{00BB}\n\
-             set filePath to POSIX file \"{jpg}\" as text\n\
-             set fRef to open for access file filePath with write permission\n\
-             set eof of fRef to 0\n\
-             write imgData to fRef\n\
-             close access fRef\n\
-             set imageOut to \"JPEG\"\n\
-             on error\n\
-             end try\n\
-             end try\n\
-             end try\n\
-             end if\n\
-             return \"{furl_marker}\" & linefeed & furlOut & linefeed & \"{image_marker}\" & linefeed & \"IMAGE:\" & imageOut",
-            png = path_png.display(),
-            tiff = path_tiff.display(),
-            jpg = path_jpg.display(),
-            furl_marker = FURL_MARKER,
-            image_marker = IMAGE_MARKER,
-        )
-    }
-
-    fn run_attachments_osascript() -> anyhow::Result<String> {
-        let (path_png, path_tiff, path_jpg) = attachments_probe_temp_paths();
-        remove_attachment_probe_temps(&path_png, &path_tiff, &path_jpg);
-
-        let script = attachments_osascript(&path_png, &path_tiff, &path_jpg);
-
+    fn run_osascript(script: &str) -> anyhow::Result<Vec<u8>> {
         let mut cmd = Command::new("osascript");
         cmd.arg("-e")
-            .arg(&script)
+            .arg(script)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         kigi_tools::util::detach_std_command(&mut cmd);
-        let stdout = match checked_command_stdout("osascript", cmd.output()) {
-            Ok(stdout) => stdout,
-            Err(error) => {
-                remove_attachment_probe_temps(&path_png, &path_tiff, &path_jpg);
-                return Err(error);
-            }
-        };
-        Ok(String::from_utf8_lossy(&stdout).into_owned())
+        checked_command_stdout("osascript", cmd.output())
     }
 
     /// Unified furl-then-image pasteboard probe.
@@ -923,28 +788,7 @@ mod platform {
                 image: Some(image),
             });
         }
-        let raw = run_attachments_osascript()?;
-        if raw.trim().is_empty() {
-            return Ok(ClipboardAttachments::default());
-        }
-
-        let (path_png, path_tiff, path_jpg) = attachments_probe_temp_paths();
-        let (file_urls, image_class) = parse_attachments_output(&raw);
-        let image = if file_urls.is_some() {
-            remove_attachment_probe_temps(&path_png, &path_tiff, &path_jpg);
-            None
-        } else {
-            match image_class {
-                Some(class) => {
-                    read_clipboard_image_from_class(class, &path_png, &path_tiff, &path_jpg)?
-                }
-                None => {
-                    remove_attachment_probe_temps(&path_png, &path_tiff, &path_jpg);
-                    None
-                }
-            }
-        };
-        Ok(ClipboardAttachments { file_urls, image })
+        osascript_attachments(ProbeTemps::new(), run_osascript)
     }
 
     /// Read text via `pbpaste -Prefer txt`.
@@ -1020,8 +864,8 @@ mod platform {
             return Ok(Some(image));
         }
 
-        let (path_png, path_tiff, path_jpg) = attachments_probe_temp_paths();
-        remove_attachment_probe_temps(&path_png, &path_tiff, &path_jpg);
+        let temps = ProbeTemps::new()?;
+        let (path_png, path_tiff, path_jpg) = temps.paths();
 
         // Image-only AppleScript (ImageOnly paste route). Unicode guillemets
         // (\u{AB}/\u{BB}) are required for `«class …»` in `osascript -e`.
@@ -1069,20 +913,13 @@ mod platform {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         kigi_tools::util::detach_std_command(&mut cmd);
-        let stdout = match checked_command_stdout("osascript", cmd.output()) {
-            Ok(stdout) => stdout,
-            Err(error) => {
-                remove_attachment_probe_temps(&path_png, &path_tiff, &path_jpg);
-                return Err(error);
-            }
-        };
+        let stdout = checked_command_stdout("osascript", cmd.output())?;
         let class = String::from_utf8_lossy(&stdout);
         let class = class.trim();
         if class == "none" {
-            remove_attachment_probe_temps(&path_png, &path_tiff, &path_jpg);
             return Ok(None);
         }
-        read_clipboard_image_from_class(class, &path_png, &path_tiff, &path_jpg)
+        read_probe_raster(class, &temps)
     }
 
     /// Read file URLs from the macOS pasteboard via `osascript`.
