@@ -267,6 +267,13 @@ struct WrapCache {
     lines: Vec<Range<usize>>,
 }
 
+/// Whether a wrapped row's exclusive end is a cursor position on that row.
+#[derive(Debug, Clone, Copy)]
+enum RowEnd {
+    HardBreak,
+    SoftWrap,
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TextAreaState {
     /// Index into wrapped lines of the first visible line.
@@ -382,27 +389,13 @@ impl TextArea {
         }
     }
 
-    /// Clamp a buffer position so it stays within a wrapped line's range
-    /// `[line_start, line_end)`.  Without this, `display_col_to_buffer_pos`
-    /// can return `line_end` when the column exceeds the line's display
-    /// width — and `line_end` equals the *next* wrapped line's start,
-    /// which confuses `effective_scroll` into thinking the cursor hasn't
-    /// actually moved to the target line.
-    ///
-    /// Uses `self.text` to find the last valid char boundary inside the line
-    /// so we never land in the middle of a multi-byte character.
+    /// Clamp `pos` to the start of the last grapheme in `[line_start, line_end)`.
     fn clamp_to_line(&self, pos: usize, line_start: usize, line_end: usize) -> usize {
-        if line_end > line_start {
-            // Find the start of the last character in the line.
-            let last_char_start = self.text[line_start..line_end]
-                .char_indices()
-                .next_back()
-                .map(|(i, _)| line_start + i)
-                .unwrap_or(line_start);
-            pos.min(last_char_start)
-        } else {
-            line_start
-        }
+        let last_grapheme_start = self.text[line_start..line_end]
+            .grapheme_indices(true)
+            .next_back()
+            .map_or(line_start, |(i, _)| line_start + i);
+        pos.min(last_grapheme_start)
     }
 
     pub fn new() -> Self {
@@ -1699,6 +1692,35 @@ impl TextArea {
         if idx == 0 { None } else { Some(idx - 1) }
     }
 
+    /// Soft-wrapped rows are byte-adjacent; a hard row leaves its newline between it and the next.
+    fn row_with_end(lines: &[Range<usize>], idx: usize) -> Option<(Range<usize>, RowEnd)> {
+        let row = lines.get(idx)?;
+        let end_kind = match lines.get(idx + 1) {
+            Some(next) if next.start == row.end => RowEnd::SoftWrap,
+            _ => RowEnd::HardBreak,
+        };
+        Some((row.clone(), end_kind))
+    }
+
+    fn clamp_to_row(&self, pos: usize, row: &Range<usize>, end_kind: RowEnd) -> usize {
+        match end_kind {
+            RowEnd::HardBreak => pos,
+            RowEnd::SoftWrap => {
+                let last_grapheme_start = self.clamp_to_line(pos, row.start, row.end);
+                let Some(idx) = self.find_element_containing(last_grapheme_start) else {
+                    return last_grapheme_start;
+                };
+                let element_start = self.elements[idx].range.start;
+                // A display-less element wraps as text; one that began on an earlier row keeps `pos`.
+                if element_start < row.start {
+                    pos
+                } else {
+                    element_start
+                }
+            }
+        }
+    }
+
     /// Map a display column to a buffer byte position on a given wrapped line.
     ///
     /// Pure query — does not mutate any state. Handles elements (snapping to
@@ -1791,13 +1813,12 @@ impl TextArea {
 
     fn move_to_display_col_on_line(
         &mut self,
-        line_start: usize,
-        line_end: usize,
+        row: Range<usize>,
         target_col: usize,
+        end_kind: RowEnd,
     ) {
-        self.cursor_pos = self
-            .display_col_to_buffer_pos(line_start, line_end, target_col)
-            .0;
+        let (pos, _hit_element) = self.display_col_to_buffer_pos(row.start, row.end, target_col);
+        self.cursor_pos = self.clamp_to_row(pos, &row, end_kind);
     }
 
     fn beginning_of_line(&self, pos: usize) -> usize {
@@ -2652,14 +2673,10 @@ impl TextArea {
                     let target_col = self.preferred_col.unwrap_or_else(|| {
                         self.display_width_of_range(cur_range.start, self.cursor_pos)
                     });
-                    if idx > 0 {
-                        let prev = &lines[idx - 1];
-                        let line_start = prev.start;
-                        let line_end = prev.end;
-                        Some((target_col, Some((line_start, line_end))))
-                    } else {
-                        Some((target_col, None))
-                    }
+                    let prev = idx
+                        .checked_sub(1)
+                        .and_then(|prev_idx| Self::row_with_end(lines, prev_idx));
+                    Some((target_col, prev))
                 } else {
                     None
                 }
@@ -2669,11 +2686,11 @@ impl TextArea {
         } {
             // We had wrapping info. Apply movement accordingly.
             match maybe_line {
-                Some((line_start, line_end)) => {
+                Some((prev, end_kind)) => {
                     if self.preferred_col.is_none() {
                         self.preferred_col = Some(target_col);
                     }
-                    self.move_to_display_col_on_line(line_start, line_end, target_col);
+                    self.move_to_display_col_on_line(prev, target_col, end_kind);
                     return;
                 }
                 None => {
@@ -2697,7 +2714,11 @@ impl TextArea {
             };
             let prev_line_start = self.text[..prev_nl].rfind('\n').map(|i| i + 1).unwrap_or(0);
             let prev_line_end = prev_nl;
-            self.move_to_display_col_on_line(prev_line_start, prev_line_end, target_col);
+            self.move_to_display_col_on_line(
+                prev_line_start..prev_line_end,
+                target_col,
+                RowEnd::HardBreak,
+            );
         } else {
             self.cursor_pos = 0;
             self.preferred_col = None;
@@ -2716,14 +2737,7 @@ impl TextArea {
                     let target_col = self.preferred_col.unwrap_or_else(|| {
                         self.display_width_of_range(cur_range.start, self.cursor_pos)
                     });
-                    if idx + 1 < lines.len() {
-                        let next = &lines[idx + 1];
-                        let line_start = next.start;
-                        let line_end = next.end;
-                        Some((target_col, Some((line_start, line_end))))
-                    } else {
-                        Some((target_col, None))
-                    }
+                    Some((target_col, Self::row_with_end(lines, idx + 1)))
                 } else {
                     None
                 }
@@ -2732,11 +2746,11 @@ impl TextArea {
             }
         } {
             match move_to_last {
-                Some((line_start, line_end)) => {
+                Some((next, end_kind)) => {
                     if self.preferred_col.is_none() {
                         self.preferred_col = Some(target_col);
                     }
-                    self.move_to_display_col_on_line(line_start, line_end, target_col);
+                    self.move_to_display_col_on_line(next, target_col, end_kind);
                     return;
                 }
                 None => {
@@ -2766,7 +2780,11 @@ impl TextArea {
                 .find('\n')
                 .map(|i| i + next_line_start)
                 .unwrap_or(self.text.len());
-            self.move_to_display_col_on_line(next_line_start, next_line_end, target_col);
+            self.move_to_display_col_on_line(
+                next_line_start..next_line_end,
+                target_col,
+                RowEnd::HardBreak,
+            );
         } else {
             self.cursor_pos = self.text.len();
             self.preferred_col = None;
@@ -3898,6 +3916,9 @@ fn truncate_line_display(line: &Line<'static>, max_width: usize) -> Line<'static
 
     Line::from(new_spans)
 }
+
+#[cfg(test)]
+mod soft_wrap_nav_tests;
 
 #[cfg(test)]
 mod tests {
@@ -6293,6 +6314,7 @@ mod tests {
         assert_eq!(t.cursor(), "👍👍".len());
     }
 
+    /// Each ZWJ cluster fills a 4-col row; Up from the end lands on row 1's cluster start.
     #[test]
     fn wrapped_navigation_with_zwj_graphemes() {
         let grapheme = "👩\u{200D}💻";
@@ -6306,7 +6328,7 @@ mod tests {
         assert!(pos_after_down >= grapheme.len() * 2);
 
         t.move_cursor_up();
-        assert_eq!(t.cursor(), grapheme.len() * 2);
+        assert_eq!(t.cursor(), grapheme.len());
     }
 
     #[test]
