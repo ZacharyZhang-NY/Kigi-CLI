@@ -6,6 +6,7 @@
 
 use std::path::Path;
 
+use crate::implementations::skills::body_cap::cap_skill_body;
 use crate::implementations::skills::skill::{SkillOutput, extract_skill_body, format_skill_name};
 use crate::implementations::skills::types::SkillInfo;
 use crate::types::requirements::{Expr, ToolRequirement};
@@ -279,7 +280,7 @@ impl kigi_tool_runtime::Tool for SkillTool {
             }
         };
 
-        let content = match load_skill_content(&skill).await {
+        let mut content = match load_skill_content(&skill).await {
             Ok(c) => c,
             Err(e) => {
                 return Ok(SkillOutput {
@@ -291,6 +292,14 @@ impl kigi_tool_runtime::Tool for SkillTool {
                 });
             }
         };
+
+        if cap_skill_body(&mut content) {
+            tracing::info!(
+                skill = %skill.name,
+                path = %skill.path,
+                "skill body truncated at read cap"
+            );
+        }
 
         let files = list_skill_files(&skill, 10).await;
 

@@ -8,8 +8,8 @@ const MAX_LINES_READ_DEFAULT: usize = 1_000;
 /// There is deliberately no per-line cap: clipping long lines silently
 /// corrupts single-line files (minified JSON, data dumps) with no way for
 /// the model to recover the clipped bytes. Non-skill reads are bounded by
-/// the whole-read `MAX_NUM_TOKENS` cap instead (skill files are exempt from
-/// all read limits by design). Other agent CLIs likewise apply no
+/// the whole-read `MAX_NUM_TOKENS` cap instead (a skill file under that cap
+/// comes back whole, offset and limit ignored). Other agent CLIs likewise apply no
 /// per-line cap. The wire field (`TruncationConfig.max_chars_per_line` in
 /// kigi-tools.proto) is deprecated and ignored.
 #[derive(Debug, Clone, Default)]

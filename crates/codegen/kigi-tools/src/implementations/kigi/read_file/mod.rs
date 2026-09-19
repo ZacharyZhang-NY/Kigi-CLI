@@ -46,6 +46,12 @@ impl ReadFileVersion {
     }
 }
 pub(crate) const MAX_NUM_TOKENS: usize = 25_000;
+pub(crate) const MAX_NUM_BYTES: usize =
+    MAX_NUM_TOKENS * kigi_token_estimation::BYTES_PER_TOKEN as usize;
+/// True when `text` is over the per-call token cap.
+pub(crate) fn exceeds_read_cap(text: &str) -> bool {
+    crate::util::truncate::estimate_tokens(text) > MAX_NUM_TOKENS
+}
 pub const MAX_LINES_READ: usize = 1_000;
 pub use crate::implementations::read_file::{
     FileMetadata, PDF_MAX_PAGES_PER_READ, bytes_to_metadata, parse_page_range,
@@ -434,22 +440,25 @@ pub(crate) async fn run_read_file(
             .map(|t| t.0.max_lines_read())
             .unwrap_or_else(|| TruncationConfig::default().max_lines_read())
     };
-    let (effective_offset, effective_limit) = if is_skill_file {
-        (None, None)
-    } else {
-        (
-            input.offset,
-            Some(input.limit.unwrap_or(usize::MAX).min(max_lines)),
-        )
+    // A skill file under the cap comes back whole; over it, it reads like any other file.
+    let skill_full = is_skill_file
+        .then(|| extract_file_content_lines(&file_content, None, None, total_lines))
+        .filter(|full| !exceeds_read_cap(&full.content));
+    let (extracted, stored_offset, stored_limit) = match skill_full {
+        Some(full) => (full, None, None),
+        None => (
+            extract_file_content_lines(
+                &file_content,
+                input.offset,
+                Some(input.limit.unwrap_or(usize::MAX).min(max_lines)),
+                total_lines,
+            ),
+            stored_read_offset(input.offset),
+            input.limit,
+        ),
     };
-    let extracted = extract_file_content_lines(
-        &file_content,
-        effective_offset,
-        effective_limit,
-        total_lines,
-    );
-    let token_count = crate::util::truncate::estimate_tokens(&extracted.content);
-    if !is_skill_file && token_count > MAX_NUM_TOKENS {
+    if exceeds_read_cap(&extracted.content) {
+        let token_count = crate::util::truncate::estimate_tokens(&extracted.content);
         let (grep_name, execute_name);
         {
             let res = resources.lock().await;
@@ -497,11 +506,6 @@ pub(crate) async fn run_read_file(
         };
         return Ok(ReadFileOutput::FileTooLarge(msg));
     }
-    let (stored_offset, stored_limit) = if is_skill_file {
-        (None, None)
-    } else {
-        (stored_read_offset(input.offset), input.limit)
-    };
     if let Some(flag) = streamable_out {
         *flag = true;
     }
@@ -1660,9 +1664,8 @@ pub fn verify(req: &HttpRequest) -> Result<Claims, Error> {
             other => panic!("Expected FileContent, got {:?}", other),
         }
     }
-    #[tokio::test]
-    async fn skill_file_skips_token_limit() {
-        let tmp = TempDir::new().unwrap();
+    /// 1100 lines of 200 bytes: about 55k tokens, over the 25k cap.
+    fn write_oversized_skill(tmp: &TempDir) {
         let line = "x".repeat(200);
         let big_content = std::iter::repeat_n(line.as_str(), 1100)
             .collect::<Vec<_>>()
@@ -1670,6 +1673,11 @@ pub fn verify(req: &HttpRequest) -> Result<Claims, Error> {
         let skill_dir = tmp.path().join("skills");
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(skill_dir.join("SKILL.md"), &big_content).unwrap();
+    }
+    #[tokio::test]
+    async fn skill_file_over_cap_returns_file_too_large() {
+        let tmp = TempDir::new().unwrap();
+        write_oversized_skill(&tmp);
         let tool = ReadFileTool;
         let mut resources = test_resources(tmp.path());
         resources.insert(TemplateRenderer::new(
@@ -1687,10 +1695,35 @@ pub fn verify(req: &HttpRequest) -> Result<Claims, Error> {
             .await
             .unwrap();
         assert!(
-            matches!(result, ReadFileOutput::FileContent(_)),
-            "SKILL.md should not be truncated, got {:?}",
+            matches!(result, ReadFileOutput::FileTooLarge(_)),
+            "got {:?}",
             std::mem::discriminant(&result),
         );
+    }
+    #[tokio::test]
+    async fn skill_file_over_cap_honors_offset_and_limit() {
+        let tmp = TempDir::new().unwrap();
+        write_oversized_skill(&tmp);
+        let tool = ReadFileTool;
+        let resources = test_resources(tmp.path());
+        let input = ReadFileInput {
+            path: "skills/SKILL.md".to_string(),
+            offset: Some(3),
+            limit: Some(2),
+            pages: None,
+            format: None,
+        };
+        let result = kigi_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+            .await
+            .unwrap();
+        match result {
+            ReadFileOutput::FileContent(fc) => {
+                assert_eq!((Some(3), Some(2)), (fc.offset, fc.limit));
+                let line = "x".repeat(200);
+                assert_eq!(format!("3→{line}\n{line}"), fc.content);
+            }
+            other => panic!("Expected FileContent, got {:?}", other),
+        }
     }
     #[test]
     fn parse_single_page() {

@@ -1020,6 +1020,7 @@ pub(super) async fn build_skill_information_for_refs(
     slash_skills: &[SkillInfo],
     session_id: &str,
 ) -> Option<String> {
+    use kigi_tools::implementations::skills::body_cap::cap_skill_body;
     use kigi_tools::implementations::skills::skill::{
         SkillRef, SubstitutionContext, apply_substitutions, build_skill_block,
         build_skill_information, load_skill_content,
@@ -1034,6 +1035,13 @@ pub(super) async fn build_skill_information_for_refs(
         };
         match load_skill_content(info).await {
             Ok(mut content) => {
+                if cap_skill_body(&mut content) {
+                    tracing::info!(
+                        skill = %sk.name,
+                        path = %info.path,
+                        "skill body truncated at read cap"
+                    );
+                }
                 let skill_dir = std::path::Path::new(&info.path)
                     .parent()
                     .and_then(|p| p.to_str());
@@ -1463,6 +1471,31 @@ mod tests {
             build_skill_information_for_refs(&parsed, &missing, "sid-1").await,
             None
         );
+    }
+
+    /// A 220 KB skill body stops at the read cap; the tail stays on disk.
+    #[tokio::test]
+    async fn build_skill_information_for_refs_caps_an_oversized_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("SKILL.md");
+        let body = (1..=1100)
+            .map(|n| format!("{n:05} {}", "x".repeat(194)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&path, &body).unwrap();
+
+        let mut skill = make_skill("big", true);
+        skill.path = path.to_string_lossy().to_string();
+        let skills = vec![skill];
+
+        let parsed =
+            parse_skill_references("/big", &skills, all_gated()).expect("known skill must parse");
+        let info = build_skill_information_for_refs(&parsed, &skills, "sid-1")
+            .await
+            .expect("skill body must load");
+        assert!(info.contains("00001 "), "head must survive");
+        assert!(!info.contains("01100 "), "tail must be cut");
+        assert!(info.contains("Skill body truncated at the 25000-token cap"));
     }
 
     #[test]
