@@ -513,6 +513,7 @@ pub fn apply_at(plan: &KimiImportPlan, kigi_home: &Path) -> anyhow::Result<KimiA
     if applied.total_added() > 0 {
         // Atomic write: tmp + rename (same pattern as save_mcp_server_config).
         let toml_str = toml::to_string_pretty(&root)?;
+        let config_path = crate::util::config::config_write_dest(&config_path)?;
         let tmp = config_path.with_extension("toml.tmp");
         if let Err(e) = std::fs::write(&tmp, &toml_str) {
             let _ = std::fs::remove_file(&tmp);

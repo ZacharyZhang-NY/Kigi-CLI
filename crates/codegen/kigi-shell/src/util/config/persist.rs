@@ -52,6 +52,7 @@ pub async fn save_config(config: &Config) -> Result<()> {
     }
 
     let toml_str = toml::to_string_pretty(&root)?;
+    let path = super::config_write_dest(&path)?;
     if let Some(parent) = path.parent() {
         let _ = tokio::fs::create_dir_all(parent).await;
     }

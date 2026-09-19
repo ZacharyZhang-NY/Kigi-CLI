@@ -638,6 +638,7 @@ fn write_import_marker(config_path: &Path) -> anyhow::Result<()> {
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    let config_path = &crate::util::config::config_write_dest(config_path)?;
     let tmp = config_path.with_extension("toml.tmp");
     // Best-effort cleanup of the .tmp file if either write or rename fails so
     // a failed marker write doesn't leave a stale artefact next to the real
@@ -820,6 +821,7 @@ fn apply_items_to_config(config_path: &Path, items: &[ImportableItem]) -> anyhow
 
     if count > 0 {
         let toml_str = toml::to_string_pretty(&root)?;
+        let config_path = &crate::util::config::config_write_dest(config_path)?;
         let tmp = config_path.with_extension("toml.tmp");
         if let Some(parent) = config_path.parent() {
             std::fs::create_dir_all(parent)?;

@@ -64,6 +64,15 @@ The cure is rmcp 3.x (upstream runs 3.2), a major bump not yet taken.
   switch that never stuck). Plain rename stays correct only for true moves
   whose destination doesn't pre-exist (worktree-pool markers, corrupt-file
   backups). Write failures must at least `warn!` — never `let _ =`.
+- **config.toml writers resolve their destination through
+  `util::config::config_write_dest` before they name the tmp file.** A
+  symlinked `~/.kigi/config.toml` (dotfiles) keeps its link: the tmp sits
+  beside the referent and replaces it. Only that one path is followed, and
+  only while `user_kigi_home()` resolves (with no home, `kigi_home()` is the
+  project's own `./.kigi`). A project `.kigi/config.toml` is
+  repo-controlled, and following its symlink would overwrite whatever file
+  a hostile repo points it at; there the link itself is replaced.
+  Credential and managed stores never follow symlinks.
 - The root `Cargo.toml` is hand-maintained (upstream's generator is not in
   this repo). Members sorted; versions inherited from
   `workspace.package.version` — the single source of truth for the release

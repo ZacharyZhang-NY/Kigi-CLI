@@ -359,6 +359,7 @@ pub async fn save_mcp_disabled_tools(server_name: &str, disabled_tools: &[String
     }
 
     let toml_str = toml::to_string_pretty(&root)?;
+    let path = super::config_write_dest(&path)?;
     let tmp = path.with_extension("toml.tmp");
     if let Some(parent) = path.parent() {
         let _ = tokio::fs::create_dir_all(parent).await;
@@ -413,6 +414,7 @@ pub async fn save_mcp_server_enabled(server_name: &str, enabled: bool) -> Result
     }
 
     let toml_str = toml::to_string_pretty(&root)?;
+    let path = super::config_write_dest(&path)?;
     let tmp = path.with_extension("toml.tmp");
     if let Some(parent) = path.parent() {
         let _ = tokio::fs::create_dir_all(parent).await;
@@ -472,6 +474,7 @@ pub async fn save_mcp_server_config_at(
     }
 
     let toml_str = toml::to_string_pretty(&root)?;
+    let path = super::config_write_dest(path)?;
     let tmp = path.with_extension("toml.tmp");
     if let Some(parent) = path.parent() {
         let _ = tokio::fs::create_dir_all(parent).await;
@@ -552,6 +555,7 @@ pub async fn delete_mcp_server_config_at(
     }
 
     let toml_str = toml::to_string_pretty(&root)?;
+    let path = super::config_write_dest(path)?;
     let tmp = path.with_extension("toml.tmp");
     if let Some(parent) = path.parent() {
         let _ = tokio::fs::create_dir_all(parent).await;

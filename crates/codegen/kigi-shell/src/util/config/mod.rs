@@ -10,6 +10,7 @@ mod resolve;
 mod settings_writes;
 mod tips;
 mod worktree;
+mod write_dest;
 
 pub use campaigns::{
     load_effective_config, load_effective_config_disk_only, persist_models_default,
@@ -30,3 +31,4 @@ pub use resolve::*;
 pub use settings_writes::*;
 pub use tips::*;
 pub use worktree::*;
+pub(crate) use write_dest::config_write_dest;
