@@ -6707,7 +6707,10 @@ reasoning_effort = "low"
         assert_eq!(model.info.base_url, "https://inference.example.com/v1");
     }
     #[test]
+    #[serial]
     fn e2e_default_model_with_session_routes_to_proxy() {
+        // Hermetic: serial tests point KIGI_CODE_BASE_URL at wiremock.
+        let _base = EnvGuard::unset(kigi_env::CODE_BASE_URL_ENV);
         let (_, models) = resolve_models_from_toml("", None);
         let model = models
             .get(BUNDLED_DEFAULT_KEY)
@@ -6839,7 +6842,10 @@ reasoning_effort = "low"
         );
     }
     #[test]
+    #[serial]
     fn e2e_duplicate_model_field_both_entries_survive() {
+        // Hermetic: serial tests point KIGI_CODE_BASE_URL at wiremock.
+        let _base = EnvGuard::unset(kigi_env::CODE_BASE_URL_ENV);
         let dm = crate::models::default_model();
         let (_, models) = resolve_models_from_toml(
             &format!(
