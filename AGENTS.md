@@ -17,8 +17,9 @@ import) or any `KIMI_*` env var.
 Upstream sync record (update on every sync): fork baseline is upstream
 snapshot `8adf901` (2026-07-16, ≈v0.2.102); bug fixes evaluated and
 selectively ported through upstream `77cd7eb` (2026-08-25, ≈v1.0.10) in
-the 0.1.13 cycle and through `3794978` (2026-09-09, ≈v1.0.24) in the
-0.1.15 cycle. Upstream is daily "Synced from monorepo" snapshots —
+the 0.1.13 cycle, through `3794978` (2026-09-09, ≈v1.0.24) in the 0.1.15
+cycle, and through `a28ee2b` (2026-09-17, ≈v1.0.35) in the 0.1.16 cycle.
+Upstream is daily "Synced from monorepo" snapshots —
 the commit BODIES carry per-change bullet lists, and
 `crates/codegen/xai-grok-shell/changelogs/` maps releases to dates;
 start any future sync from those two, not from raw diffs.
@@ -37,6 +38,15 @@ POST in turn, so the cancel queues behind the hung call;
 `servers/cancel_aware.rs` waits 500 ms, warns, and the transport reset
 then drops the connection. stdio and SSE-mode servers get the cancel.
 The cure is rmcp 3.x (upstream runs 3.2), a major bump not yet taken.
+
+Evaluated in the 0.1.16 window and left for a later cycle: MCP qualified
+tool names past 64 chars (first prove the name never reaches a provider
+function list), the auto-update guard for a binary still in use (needs
+per-OS process scans), the DA1 fence around the kitty keyboard pop (needs
+a design against the 0.1.15 teardown), MCP servers on protocol 2026-07-28
+(rmcp 3.x again), and `pager.toml`, whose writer in
+`kigi-pager-render/src/appearance/config.rs` still ends in a bare
+`fs::rename` and replaces a symlink.
 
 ## Hard constraints
 
@@ -372,8 +382,7 @@ client-side, no backend surface.
       reasoning replay requires `include:["reasoning.encrypted_content"]`.
       API-key `openai` Responses requests carry NONE of this
       (byte-identical, pinned by a control wire test). `reasoning.effort`
-      carries the thinking level (incl. the codex-only `ultra`). NO
-      websocket, NO base_instructions.
+      carries the thinking level. NO websocket, NO base_instructions.
       CATALOG is HARDCODED (`PlatformId::hardcoded_catalog` →
       `openai_codex_wire_models`, mapped through the SAME
       `platform_wire_model_to_entry` output): exactly the 4 `visibility=list` &&
@@ -522,10 +531,10 @@ client-side, no backend surface.
   `parse_api_json` for bundled + runtime refresh; 24h cache
   `~/.kigi/models_dev_cache.json`). Wire values always win; enrichment
   never invents model availability. Canonical reasoning efforts:
-  none/minimal/low/medium/high/xhigh/max/ultra (`max` split from `xhigh`
-  2026-07; `ultra` is codex-only, above `max`, surfaced only via a model's
-  server-declared effort menu; Kimi wire spells its top tier `max`, kimi_compat
-  renames).
+  none/minimal/low/medium/high/xhigh/max (`max` split from `xhigh` 2026-07;
+  `ultra` was dropped the same month, no backend accepts it; Kimi wire
+  spells its top tier `max`, kimi_compat renames). config.toml accepts any
+  letter case: `ReasoningEffort` deserializes through `FromStr`.
 
 ## Milestones (PRD §8.3)
 
