@@ -897,7 +897,7 @@ impl CompactionsRemaining {
 }
 
 /// Reasoning effort level. `None`/`Minimal` are omitted on the Anthropic Messages API.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReasoningEffort {
     None,
@@ -979,6 +979,16 @@ impl std::str::FromStr for ReasoningEffort {
                 "invalid reasoning effort: {s:?} (expected one of: none, minimal, low, medium, high, xhigh, max)"
             )),
         }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ReasoningEffort {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        raw.parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -1847,6 +1857,24 @@ mod tests {
             assert_eq!(back, v, "round-trip {v:?}");
         }
         assert!(serde_json::from_str::<ReasoningEffort>("\"BOGUS\"").is_err());
+    }
+
+    #[test]
+    fn reasoning_effort_deserializes_mixed_case() {
+        for (token, want) in [
+            ("\"High\"", ReasoningEffort::High),
+            ("\"XHIGH\"", ReasoningEffort::Xhigh),
+            ("\"mAx\"", ReasoningEffort::Max),
+        ] {
+            let got: ReasoningEffort = serde_json::from_str(token).unwrap();
+            assert_eq!(got, want, "deserialize {token}");
+        }
+        let err = serde_json::from_str::<ReasoningEffort>("\"Highest\"").unwrap_err();
+        assert!(
+            err.to_string().contains("invalid reasoning effort"),
+            "{err}"
+        );
+        assert!(serde_json::from_str::<ReasoningEffort>("7").is_err());
     }
 
     #[test]
