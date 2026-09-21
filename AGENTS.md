@@ -533,8 +533,9 @@ client-side, no backend surface.
   never invents model availability. Canonical reasoning efforts:
   none/minimal/low/medium/high/xhigh/max (`max` split from `xhigh` 2026-07;
   the Codex backend advertises an `ultra` tier above `max` that kigi has no
-  level for; Kimi wire spells its top tier `max`, kimi_compat renames). config.toml accepts any
-  letter case: `ReasoningEffort` deserializes through `FromStr`.
+  level for; Kimi wire spells its top tier `max`, kimi_compat renames).
+  config.toml accepts any letter case: `ReasoningEffort` deserializes
+  through `FromStr`.
 
 ## Milestones (PRD §8.3)
 
