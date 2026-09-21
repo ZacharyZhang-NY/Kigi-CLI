@@ -1473,7 +1473,7 @@ mod tests {
 
     /// openai-codex fetch: the catalog is HARDCODED, so the fetch path
     /// short-circuits BEFORE any HTTP — there is NO mock `/models` server, yet
-    /// the fetch returns exactly the 4 compiled-in models keyed
+    /// the fetch returns exactly the 5 compiled-in models keyed
     /// `openai-codex/<slug>` on the Responses backend, ctx 272000, each exposing
     /// its exact reasoning efforts (incl. the codex-only `xhigh`/`max`).
     /// A BOGUS base URL confirms no live `/models` request is attempted (it would
@@ -1510,20 +1510,16 @@ mod tests {
                 .map(|m| m.id.as_deref().unwrap_or_default())
                 .collect::<Vec<_>>(),
             vec![
+                "openai-codex/gpt-6-astra",
                 "openai-codex/gpt-5.6-sol",
                 "openai-codex/gpt-5.6-terra",
                 "openai-codex/gpt-5.6-luna",
                 "openai-codex/gpt-5.5",
             ],
-            "exactly the 4 hardcoded models, keyed openai-codex/<slug>"
+            "exactly the 5 hardcoded models, keyed openai-codex/<slug>"
         );
         // Excluded models never appear.
-        for absent in [
-            "openai-codex/gpt-5.3-codex-spark",
-            "openai-codex/gpt-5.4",
-            "openai-codex/gpt-5.4-mini",
-            "openai-codex/codex-auto-review",
-        ] {
+        for absent in ["openai-codex/gpt-reserve", "openai-codex/codex-auto-review"] {
             assert!(
                 !result
                     .models
@@ -1532,7 +1528,14 @@ mod tests {
                 "{absent} must be absent from the hardcoded catalog"
             );
         }
-        let sol = &result.models[0];
+        let astra = &result.models[0];
+        assert_eq!(astra.name.as_deref(), Some("GPT-6-Astra"));
+        assert_eq!(astra.context_window.get(), 272_000);
+        let sol = result
+            .models
+            .iter()
+            .find(|m| m.id.as_deref() == Some("openai-codex/gpt-5.6-sol"))
+            .unwrap();
         assert_eq!(
             sol.api_backend,
             crate::sampling::ApiBackend::Responses,

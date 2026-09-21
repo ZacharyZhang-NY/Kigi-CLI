@@ -1570,9 +1570,10 @@ impl PlatformId {
     /// The compiled-in catalog for a platform that serves NO live `/models`
     /// listing (openai-codex), or `None` when the catalog comes from the wire.
     ///
-    /// openai-codex's 4 models are HARDCODED (read from the official Codex CLI's
-    /// `models_cache.json`, the `visibility=="list"` AND `supported_in_api==true`
-    /// set) because OpenAI exposes no stable public models endpoint for the
+    /// openai-codex's 5 models are HARDCODED (read from the Codex backend
+    /// catalog on 2026-09-21, the `visibility=="list"` AND
+    /// `supported_in_api==true` set) because OpenAI exposes no stable public
+    /// models endpoint for the
     /// ChatGPT Codex backend. Each entry carries context window + per-model
     /// selectable reasoning efforts (incl. the codex-only `xhigh`/`max`
     /// tiers), so the fetch path maps them through the SAME
@@ -1606,14 +1607,21 @@ fn codex_wire_model(slug: &str, display_name: &str, efforts: &[&str], default: &
     }
 }
 
-/// The HARDCODED openai-codex catalog: exactly the 4 `visibility=="list"` AND
-/// `supported_in_api==true` models from the Codex CLI model cache. The
-/// `gpt-5.3-codex-spark` (supported_in_api=false → not served by /responses),
-/// `gpt-5.4`, `gpt-5.4-mini`, and `codex-auto-review` (visibility="hide") models
-/// are deliberately EXCLUDED — they would list-but-not-work or are not
-/// user-facing (fail-fast: never advertise a model the backend rejects).
+/// The HARDCODED openai-codex catalog: exactly the 5 `visibility=="list"` AND
+/// `supported_in_api==true` models the Codex backend served on 2026-09-21, in
+/// its own priority order. `gpt-reserve` and `codex-auto-review`
+/// (visibility="hide") are deliberately EXCLUDED — they are not user-facing
+/// (fail-fast: never advertise a model the backend rejects). `gpt-6-astra`
+/// also advertises an `ultra` tier above `max`; kigi has no such level, so it
+/// is not listed here.
 fn openai_codex_wire_models() -> Vec<WireModel> {
     vec![
+        codex_wire_model(
+            "gpt-6-astra",
+            "GPT-6-Astra",
+            &["low", "medium", "high", "xhigh", "max"],
+            "medium",
+        ),
         codex_wire_model(
             "gpt-5.6-sol",
             "GPT-5.6-Sol",
@@ -2653,29 +2661,30 @@ mod tests {
         assert_eq!(c.base_url(), "https://mock.codex/codex");
     }
 
-    /// The HARDCODED openai-codex catalog is exactly the 4 supported+listed
+    /// The HARDCODED openai-codex catalog is exactly the 5 supported+listed
     /// models, keyed by slug, ctx 272000, each exposing its exact supported
-    /// efforts (incl. the codex-only `xhigh`/`max` tiers). The
-    /// list-but-broken / hidden models are absent. Every other platform serves
-    /// NO hardcoded catalog (its models come from the live wire).
+    /// efforts (incl. the codex-only `xhigh`/`max` tiers). The hidden models
+    /// are absent. Every other platform serves NO hardcoded catalog (its
+    /// models come from the live wire).
     #[test]
-    fn openai_codex_hardcoded_catalog_is_the_four_supported_models() {
+    fn openai_codex_hardcoded_catalog_is_the_five_supported_models() {
         let catalog = PlatformId::OpenaiCodex
             .hardcoded_catalog()
             .expect("openai-codex serves a hardcoded catalog");
         let ids: Vec<&str> = catalog.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(
             ids,
-            vec!["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"],
-            "exactly the 4 visibility=list AND supported_in_api=true models"
+            vec![
+                "gpt-6-astra",
+                "gpt-5.6-sol",
+                "gpt-5.6-terra",
+                "gpt-5.6-luna",
+                "gpt-5.5"
+            ],
+            "exactly the 5 visibility=list AND supported_in_api=true models"
         );
-        // Excluded: list-but-not-served + hidden models never appear.
-        for absent in [
-            "gpt-5.3-codex-spark",
-            "gpt-5.4",
-            "gpt-5.4-mini",
-            "codex-auto-review",
-        ] {
+        // Excluded: hidden models never appear.
+        for absent in ["gpt-reserve", "codex-auto-review"] {
             assert!(
                 !ids.contains(&absent),
                 "{absent} must be excluded from the hardcoded catalog"
@@ -2701,6 +2710,11 @@ mod tests {
                 .clone()
         };
         assert_eq!(
+            efforts("gpt-6-astra"),
+            ["low", "medium", "high", "xhigh", "max"],
+            "`ultra` is advertised above `max` but kigi has no such level"
+        );
+        assert_eq!(
             efforts("gpt-5.6-sol"),
             ["low", "medium", "high", "xhigh", "max"]
         );
@@ -2725,6 +2739,7 @@ mod tests {
                 .default_effort
                 .clone()
         };
+        assert_eq!(default("gpt-6-astra").as_deref(), Some("medium"));
         assert_eq!(default("gpt-5.6-sol").as_deref(), Some("low"));
         assert_eq!(default("gpt-5.6-terra").as_deref(), Some("medium"));
         // Only openai-codex has a hardcoded catalog; every wire platform is None.
