@@ -383,18 +383,13 @@ client-side, no backend surface.
       API-key `openai` Responses requests carry NONE of this
       (byte-identical, pinned by a control wire test). `reasoning.effort`
       carries the thinking level. NO websocket, NO base_instructions.
-      CATALOG is LIVE (`ListingDialect::OpenaiCodex` →
-      `parse_openai_codex_listing`): `GET {base}/models?client_version=
-      {CODEX_CLIENT_VERSION}` with the Bearer alone (no identity headers —
-      verified), keeping the `visibility=="list" && supported_in_api` models
-      and carrying their context window + per-model efforts. The query is
-      REQUIRED (400 without it) and the backend GATES the catalog on it:
-      `0.104.0` answers with `codex-auto-review` alone, `0.150.0` omits
-      `gpt-6-astra`, `0.155.1` serves the full set — so
-      `CODEX_CLIENT_VERSION` (kigi-sampling-types, also the `User-Agent`
-      version) must track a real upstream codex release, and a model that
-      never appears is a version-gate symptom first. NO codex-CLI / `~/.codex`
-      dependency.
+      CATALOG is HARDCODED (`PlatformId::hardcoded_catalog` →
+      `openai_codex_wire_models`, mapped through the SAME
+      `platform_wire_model_to_entry` output): exactly the 4 `visibility=list` &&
+      `supported_in_api=true` models (`gpt-5.6-sol/terra/luna`, `gpt-5.5`, ctx
+      272000, per-model efforts) — NO live `/models` fetch, NO codex-CLI /
+      `~/.codex` dependency; `gpt-5.3-codex-spark` (api=false) and
+      `gpt-5.4`/`gpt-5.4-mini`/`codex-auto-review` (hidden) are EXCLUDED.
   - `OAuthFlow::GithubDeviceCopilot` → `auth::github_copilot` (TWO-STAGE).
     Provider: `github-copilot` (`scope_key oauth/github-copilot`, base
     `api.individual.githubcopilot.com`, ChatCompletions wire). Stage 1 is an
@@ -537,14 +532,9 @@ client-side, no backend surface.
   `~/.kigi/models_dev_cache.json`). Wire values always win; enrichment
   never invents model availability. Canonical reasoning efforts:
   none/minimal/low/medium/high/xhigh/max (`max` split from `xhigh` 2026-07;
-  Kimi wire spells its top tier `max`, kimi_compat renames). config.toml
-  accepts any letter case: `ReasoningEffort` deserializes through `FromStr`.
-  The codex catalog advertises an `ultra` tier above `max` for
-  `gpt-6-astra`/`gpt-5.6-sol`/`gpt-5.6-terra`; kigi has no such level and
-  `think_efforts_to_options` drops it with a warning. The models.dev provider
-  for the Kimi coding plan is `kimi-code-plan-cn` (api.kimi.com — kigi's
-  endpoint); it was renamed from `kimi-for-coding` in 2026-09 and
-  `kimi-code-plan-global` is the api.kimi.ai twin.
+  `ultra` was dropped the same month, no backend accepts it; Kimi wire
+  spells its top tier `max`, kimi_compat renames). config.toml accepts any
+  letter case: `ReasoningEffort` deserializes through `FromStr`.
 
 ## Milestones (PRD §8.3)
 

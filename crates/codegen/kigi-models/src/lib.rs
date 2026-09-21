@@ -61,11 +61,6 @@ pub enum ListingDialect {
     /// headers, Anthropic's response shape (parsed by
     /// [`parse_anthropic_listing`]).
     Anthropic,
-    /// `GET {base}/models?client_version=<codex CLI version>`,
-    /// `Authorization: Bearer`, `{models:[{slug,...}]}` (parsed by
-    /// [`parse_openai_codex_listing`]). The query is REQUIRED (400 without it)
-    /// and gates which models the backend returns.
-    OpenaiCodex,
 }
 
 /// ChatCompletions body-adaptation dialect (leaf-safe mirror of the
@@ -1272,12 +1267,17 @@ const OPENAI_CODEX_SPEC: PlatformSpec = PlatformSpec {
     vendor: "OpenAI",
     console_host: Some("chatgpt.com"),
     login_label: Some("ChatGPT Plus/Pro (Codex)"),
-    // The Codex backend serves its own catalog with context + per-model
-    // reasoning levels, so models.dev enrichment is neither used nor needed.
+    // HARDCODED catalog (see `hardcoded_catalog`): NOT enriched from models.dev
+    // and NOT live-fetched — OpenAI exposes no stable public models endpoint for
+    // this backend.
     models_dev_id: None,
+    // The catalog is compiled-in and already carries context/thinking metadata,
+    // so enrichment (and its network refresh) is skipped entirely.
     wire_serves_metadata: true,
     wire_api: PlatformWireApi::Responses,
-    listing: ListingDialect::OpenaiCodex,
+    // Unused: the catalog does NOT come from a live `/models` listing (the
+    // fetch path short-circuits to `hardcoded_catalog`).
+    listing: ListingDialect::OpenAi,
     chat_compat: PlatformChatCompat::Passthrough,
     key_header: PlatformKeyHeader::Bearer,
     restrict_to_enriched: false,
@@ -1566,6 +1566,79 @@ impl PlatformId {
     pub fn sends_codex_responses_headers(self) -> bool {
         matches!(self, Self::OpenaiCodex)
     }
+
+    /// The compiled-in catalog for a platform that serves NO live `/models`
+    /// listing (openai-codex), or `None` when the catalog comes from the wire.
+    ///
+    /// openai-codex's 4 models are HARDCODED (read from the official Codex CLI's
+    /// `models_cache.json`, the `visibility=="list"` AND `supported_in_api==true`
+    /// set) because OpenAI exposes no stable public models endpoint for the
+    /// ChatGPT Codex backend. Each entry carries context window + per-model
+    /// selectable reasoning efforts (incl. the codex-only `xhigh`/`max`
+    /// tiers), so the fetch path maps them through the SAME
+    /// `platform_wire_model_to_entry` output as a live listing — no new type.
+    pub fn hardcoded_catalog(self) -> Option<Vec<WireModel>> {
+        match self {
+            Self::OpenaiCodex => Some(openai_codex_wire_models()),
+            _ => None,
+        }
+    }
+}
+
+/// One hardcoded openai-codex model as a [`WireModel`] (context 272000, thinking
+/// + image input, selectable efforts). `efforts` are the exact per-model
+/// supported tiers; `default` is the model's default effort.
+fn codex_wire_model(slug: &str, display_name: &str, efforts: &[&str], default: &str) -> WireModel {
+    WireModel {
+        id: slug.to_string(),
+        context_length: 272_000,
+        supports_reasoning: true,
+        supports_image_in: true,
+        supports_video_in: false,
+        display_name: Some(display_name.to_string()),
+        max_output_tokens: 0,
+        supports_thinking_type: None,
+        think_efforts: Some(WireThinkEfforts {
+            support: true,
+            valid_efforts: efforts.iter().map(|s| (*s).to_string()).collect(),
+            default_effort: Some(default.to_string()),
+        }),
+    }
+}
+
+/// The HARDCODED openai-codex catalog: exactly the 4 `visibility=="list"` AND
+/// `supported_in_api==true` models from the Codex CLI model cache. The
+/// `gpt-5.3-codex-spark` (supported_in_api=false → not served by /responses),
+/// `gpt-5.4`, `gpt-5.4-mini`, and `codex-auto-review` (visibility="hide") models
+/// are deliberately EXCLUDED — they would list-but-not-work or are not
+/// user-facing (fail-fast: never advertise a model the backend rejects).
+fn openai_codex_wire_models() -> Vec<WireModel> {
+    vec![
+        codex_wire_model(
+            "gpt-5.6-sol",
+            "GPT-5.6-Sol",
+            &["low", "medium", "high", "xhigh", "max"],
+            "low",
+        ),
+        codex_wire_model(
+            "gpt-5.6-terra",
+            "GPT-5.6-Terra",
+            &["low", "medium", "high", "xhigh", "max"],
+            "medium",
+        ),
+        codex_wire_model(
+            "gpt-5.6-luna",
+            "GPT-5.6-Luna",
+            &["low", "medium", "high", "xhigh", "max"],
+            "medium",
+        ),
+        codex_wire_model(
+            "gpt-5.5",
+            "GPT-5.5",
+            &["low", "medium", "high", "xhigh"],
+            "medium",
+        ),
+    ]
 }
 
 /// Split a managed catalog key `{platform_id}/{model_id}` back into its
@@ -2006,72 +2079,6 @@ pub fn parse_github_copilot_listing(json: &str) -> Result<Vec<WireModel>, serde_
             max_output_tokens: 0,
             supports_thinking_type: None,
             think_efforts: None,
-        })
-        .collect();
-    Ok(kept)
-}
-
-/// One entry of the Codex backend catalog (`{"models":[...]}`). Only the
-/// fields Kigi consumes are declared; the response carries many more.
-#[derive(serde::Deserialize)]
-struct CodexModel {
-    slug: String,
-    display_name: Option<String>,
-    visibility: String,
-    supported_in_api: bool,
-    context_window: Option<u64>,
-    default_reasoning_level: Option<String>,
-    #[serde(default)]
-    supported_reasoning_levels: Vec<CodexReasoningLevel>,
-    #[serde(default)]
-    input_modalities: Vec<String>,
-}
-
-#[derive(serde::Deserialize)]
-struct CodexReasoningLevel {
-    effort: String,
-}
-
-#[derive(serde::Deserialize)]
-struct CodexListing {
-    models: Vec<CodexModel>,
-}
-
-/// Parse the ChatGPT Codex backend catalog
-/// (`GET {base}/models?client_version=…`). Keeps only the models the backend
-/// both shows and serves (`visibility == "list"` AND `supported_in_api`), so a
-/// hidden or API-less model (`gpt-reserve`, `codex-auto-review`) never reaches
-/// the picker. Context window and the per-model reasoning levels ride the wire;
-/// an effort Kigi does not know (`ultra`) is dropped downstream by
-/// `think_efforts_to_options`.
-pub fn parse_openai_codex_listing(json: &str) -> Result<Vec<WireModel>, serde_json::Error> {
-    let listing: CodexListing = serde_json::from_str(json)?;
-    let kept = listing
-        .models
-        .into_iter()
-        .filter(|m| m.visibility == "list" && m.supported_in_api)
-        .map(|m| {
-            let efforts: Vec<String> = m
-                .supported_reasoning_levels
-                .into_iter()
-                .map(|l| l.effort)
-                .collect();
-            let supports_image_in = m.input_modalities.iter().any(|kind| kind == "image");
-            WireModel {
-                id: m.slug,
-                context_length: m.context_window.unwrap_or_default(),
-                supports_reasoning: !efforts.is_empty(),
-                supports_image_in,
-                supports_video_in: false,
-                display_name: m.display_name,
-                max_output_tokens: 0,
-                supports_thinking_type: None,
-                think_efforts: (!efforts.is_empty()).then_some(WireThinkEfforts {
-                    support: true,
-                    valid_efforts: efforts,
-                    default_effort: m.default_reasoning_level,
-                }),
-            }
         })
         .collect();
     Ok(kept)
@@ -2646,47 +2653,90 @@ mod tests {
         assert_eq!(c.base_url(), "https://mock.codex/codex");
     }
 
-    /// The Codex catalog is LIVE. The parser keeps only the models the backend
-    /// shows AND serves, carries the wire context window, and passes every
-    /// advertised effort through (`ultra` included — the shell drops what it
-    /// cannot map). Body captured from
-    /// `GET chatgpt.com/backend-api/codex/models?client_version=0.155.1`, plus
-    /// `gpt-5.3-codex-spark` — the listed-but-`supported_in_api:false` shape the
-    /// backend served until recently, which `/responses` rejects.
+    /// The HARDCODED openai-codex catalog is exactly the 4 supported+listed
+    /// models, keyed by slug, ctx 272000, each exposing its exact supported
+    /// efforts (incl. the codex-only `xhigh`/`max` tiers). The
+    /// list-but-broken / hidden models are absent. Every other platform serves
+    /// NO hardcoded catalog (its models come from the live wire).
     #[test]
-    fn openai_codex_listing_keeps_listed_api_served_models() {
-        const BODY: &str = r#"{"models":[{"slug":"gpt-6-astra","display_name":"GPT-6-Astra","visibility":"list","supported_in_api":true,"context_window":272000,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"}],"input_modalities":["text","image"]},{"slug":"gpt-reserve","display_name":"GPT-Reserve","visibility":"hide","supported_in_api":true,"context_window":272000,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"}],"input_modalities":["text","image"]},{"slug":"gpt-5.3-codex-spark","display_name":"GPT-5.3-Codex-Spark","visibility":"list","supported_in_api":false,"context_window":272000,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"}],"input_modalities":["text","image"]},{"slug":"gpt-5.5","display_name":"GPT-5.5","visibility":"list","supported_in_api":true,"context_window":272000,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"}],"input_modalities":["text","image"]}]}"#;
-        let models = parse_openai_codex_listing(BODY).expect("codex listing parses");
-        let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+    fn openai_codex_hardcoded_catalog_is_the_four_supported_models() {
+        let catalog = PlatformId::OpenaiCodex
+            .hardcoded_catalog()
+            .expect("openai-codex serves a hardcoded catalog");
+        let ids: Vec<&str> = catalog.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(
             ids,
-            vec!["gpt-6-astra", "gpt-5.5"],
-            "the hidden model and the listed-but-not-API-served one are dropped"
+            vec!["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"],
+            "exactly the 4 visibility=list AND supported_in_api=true models"
         );
-
-        let astra = &models[0];
-        assert_eq!(astra.display_name.as_deref(), Some("GPT-6-Astra"));
-        assert_eq!(astra.context_length, 272_000);
-        assert!(astra.supports_reasoning && astra.supports_image_in);
-        assert!(!astra.supports_video_in);
-        let caps = astra.capabilities();
-        assert!(caps.contains(&ModelCapability::Thinking));
-        assert!(caps.contains(&ModelCapability::ImageIn));
-        let efforts = astra.think_efforts.as_ref().expect("astra efforts");
-        assert!(efforts.support);
-        assert_eq!(
-            efforts.valid_efforts,
-            ["low", "medium", "high", "xhigh", "max", "ultra"]
-        );
-        assert_eq!(efforts.default_effort.as_deref(), Some("medium"));
-        assert_eq!(
-            models[1]
+        // Excluded: list-but-not-served + hidden models never appear.
+        for absent in [
+            "gpt-5.3-codex-spark",
+            "gpt-5.4",
+            "gpt-5.4-mini",
+            "codex-auto-review",
+        ] {
+            assert!(
+                !ids.contains(&absent),
+                "{absent} must be excluded from the hardcoded catalog"
+            );
+        }
+        for m in &catalog {
+            assert_eq!(m.context_length, 272_000, "{} ctx", m.id);
+            assert!(m.supports_reasoning && m.supports_image_in, "{} caps", m.id);
+            let caps = m.capabilities();
+            assert!(caps.contains(&ModelCapability::Thinking));
+            assert!(caps.contains(&ModelCapability::ImageIn));
+        }
+        // Per-model efforts (the crux of "their thinking method").
+        let efforts = |slug: &str| -> Vec<String> {
+            catalog
+                .iter()
+                .find(|m| m.id == slug)
+                .unwrap()
                 .think_efforts
                 .as_ref()
-                .expect("gpt-5.5 efforts")
-                .valid_efforts,
-            ["low", "medium", "high", "xhigh"]
+                .unwrap()
+                .valid_efforts
+                .clone()
+        };
+        assert_eq!(
+            efforts("gpt-5.6-sol"),
+            ["low", "medium", "high", "xhigh", "max"]
         );
+        assert_eq!(
+            efforts("gpt-5.6-terra"),
+            ["low", "medium", "high", "xhigh", "max"]
+        );
+        assert_eq!(
+            efforts("gpt-5.6-luna"),
+            ["low", "medium", "high", "xhigh", "max"]
+        );
+        assert_eq!(efforts("gpt-5.5"), ["low", "medium", "high", "xhigh"]);
+        // Default efforts per the model table.
+        let default = |slug: &str| -> Option<String> {
+            catalog
+                .iter()
+                .find(|m| m.id == slug)
+                .unwrap()
+                .think_efforts
+                .as_ref()
+                .unwrap()
+                .default_effort
+                .clone()
+        };
+        assert_eq!(default("gpt-5.6-sol").as_deref(), Some("low"));
+        assert_eq!(default("gpt-5.6-terra").as_deref(), Some("medium"));
+        // Only openai-codex has a hardcoded catalog; every wire platform is None.
+        for p in PlatformId::ALL {
+            if p != PlatformId::OpenaiCodex {
+                assert!(
+                    p.hardcoded_catalog().is_none(),
+                    "{} must not carry a hardcoded catalog",
+                    p.as_str()
+                );
+            }
+        }
     }
 
     /// The Copilot `/models` filter keeps ONLY openai-completions-served,
