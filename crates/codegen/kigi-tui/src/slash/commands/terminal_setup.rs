@@ -96,16 +96,15 @@ impl SlashCommand for TerminalSetupCommand {
 
         // Some terminals can't distinguish Shift+Enter from bare Enter at
         // the byte level because the Kitty keyboard protocol isn't
-        // negotiated (VTE < 0.82, or VS Code's xterm.js which mis-encodes
-        // shifted keys). Point users at Alt+Enter, which is reliably
-        // delivered as ESC+CR. Suppressed when the WezTerm warning fired:
-        // stock WezTerm binds Alt+Enter to ToggleFullScreen, so advertising
-        // it would contradict that warning's `\`+Enter guidance.
-        if ctx.shift_enter_unavailable() && !wezterm_kkp_off {
+        // negotiated (VTE, VS Code's xterm.js, a multiplexer that eats
+        // extended keys). Point users at Alt+Enter, which is reliably
+        // delivered as ESC+CR. Never for WezTerm: it binds Alt+Enter to
+        // ToggleFullScreen, so its own warning's `\`+Enter guidance stands.
+        if ctx.shift_enter_unavailable() && !wezterm_kkp_off && ctx.brand != TerminalName::WezTerm {
             let detail = if ctx.vte_version.is_some() || ctx.brand == TerminalName::Vte {
                 match ctx.vte_version.as_deref() {
-                    Some(v) => format!("VTE {v}; need >= 8200 for Shift+Enter"),
-                    None => "legacy VTE; need VTE >= 0.82 for Shift+Enter".to_owned(),
+                    Some(v) => format!("VTE {v}: no Kitty keyboard protocol"),
+                    None => "VTE: no Kitty keyboard protocol".to_owned(),
                 }
             } else if matches!(
                 ctx.brand,

@@ -375,7 +375,6 @@ impl TerminalContext {
             return Some("apple_terminal");
         }
         if self.is_vte_based() {
-            // WHY: central helper replaces VTE duplication
             return Some("vte");
         }
         if self.brand == TerminalName::WindowsTerminal {
@@ -429,74 +428,24 @@ impl TerminalContext {
     }
 
     /// Whether the running terminal cannot distinguish `Shift+Enter` from
-    /// bare `Enter` at the byte level, so the UI should advertise
-    /// `Alt+Enter` for newline insertion instead.
+    /// bare `Enter`, so the UI should advertise `Alt+Enter` (delivered as
+    /// `ESC`+`CR`) for newline insertion instead.
     ///
-    /// Distinguishing `Shift+Enter` requires the Kitty keyboard protocol
-    /// (KKP) to be negotiated. This returns `true` for the environments
-    /// where the pager cannot rely on KKP for a usable `Shift+Enter`:
-    ///
-    /// 1. **Legacy VTE** (GNOME Terminal, Ptyxis, kgx, Tilix, etc.) whose
-    ///    `VTE_VERSION` is below `8200` (VTE 0.82.0, the first release with
-    ///    KKP, merged in
-    ///    [MR !14](https://gitlab.gnome.org/GNOME/vte/-/merge_requests/14)).
-    ///    Also true when the brand is detected as VTE but `VTE_VERSION` is
-    ///    missing or unparseable — we conservatively assume old.
-    /// 2. **VS Code's integrated terminal (xterm.js) and VS Code-family /
-    ///    xterm.js IDE forks**. xterm.js only partially implements KKP —
-    ///    it mis-encodes shifted printable keys — so the pager deliberately
-    ///    never negotiates KKP for them (see [`Self::kitty_skip_reason`]
-    ///    `== "vscode"` and [xterm.js#5823](https://github.com/xtermjs/xterm.js/issues/5823)).
-    ///    Without KKP, xterm.js sends a bare `CR` for `Shift+Enter`,
-    ///    byte-for-byte identical to `Enter`.
-    /// 3. **Unidentified terminals with no multiplexer**, where the pager
-    ///    also skips KKP (no positive evidence of support — typically
-    ///    VS Code's xterm.js reached over SSH, where `TERM_PROGRAM` isn't
-    ///    forwarded and the brand falls back to `Unknown`).
-    ///
-    /// In every case `Alt+Enter` (delivered as `ESC`+`CR`) is the reliable
-    /// newline chord and is what the UI advertises.
+    /// Follows [`Self::kitty_skip_reason`] rather than a second brand list:
+    /// when the protocol is not negotiated the modifier is lost, and the two
+    /// drifted once already (VTE advertised a chord that never arrived — its
+    /// `Return` keymap encodes only Alt, through 0.82.0 at least, and no VTE
+    /// release carries the protocol). Two skips still deliver it — Apple
+    /// Terminal drops the flags but `route_enter` polls CoreGraphics, and
+    /// Windows console key records carry SHIFT with no protocol at all.
     pub fn shift_enter_unavailable(&self) -> bool {
-        // WHY: central helper + version gating
-        let is_vte = self.is_vte_based();
-        if is_vte {
-            return match self
-                .vte_version
-                .as_deref()
-                .and_then(|v| v.parse::<u32>().ok())
-            {
-                Some(ver) => ver < 8200,
-                // Brand=Vte but no parseable version — conservative: assume old.
-                None => true,
-            };
+        match self.kitty_skip_reason() {
+            None | Some("apple_terminal") => false,
+            // A bare ConHost is only optimistically refined to Windows
+            // Terminal; it still advertises Alt+Enter.
+            Some("windows_terminal") => self.env_brand.is_capability_unclassified(),
+            Some(_) => true,
         }
-
-        // VS Code / xterm.js and its forks: KKP is never negotiated, so
-        // Shift+Enter arrives as a bare CR indistinguishable from Enter.
-        if matches!(
-            self.brand,
-            TerminalName::VsCode
-                | TerminalName::Cursor
-                | TerminalName::Windsurf
-                | TerminalName::Zed
-        ) {
-            return true;
-        }
-
-        // Unidentified / unclassified brand with no multiplexer: KKP is
-        // skipped (see `kitty_skip_reason`). This is the common
-        // VS Code-over-SSH shape (brand falls back to Unknown). On native
-        // Windows the effective `brand` is refined to WindowsTerminal, so
-        // consult `env_brand` — a bare ConHost is still env-Unknown and
-        // must advertise Alt+Enter even though we optimistically treat it
-        // as WT for capabilities.
-        if self.env_brand.is_capability_unclassified()
-            && self.multiplexer == MultiplexerKind::Undetected
-        {
-            return true;
-        }
-
-        false
     }
 
     /// True when `Ctrl+.` cannot be delivered reliably as a shortcuts primary.

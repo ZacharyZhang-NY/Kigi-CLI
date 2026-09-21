@@ -1443,7 +1443,7 @@ fn kitty_skip_vscode_over_tmux() {
 
 #[test]
 fn kitty_skip_vte_version() {
-    // VTE does not support Kitty keyboard protocol and crossterm's probe
+    // VTE below 0.82 has no Kitty keyboard protocol and crossterm's probe
     // can false-positive on it. https://gitlab.gnome.org/GNOME/vte/-/issues/2601
     let ctx = TerminalContext {
         vte_version: Some("7402".to_owned()),
@@ -1461,73 +1461,67 @@ fn kitty_skip_vte_brand() {
     assert_eq!(ctx.kitty_skip_reason(), Some("vte"));
 }
 
-// shift_enter_unavailable: VTE version gating for Shift+Enter
+// shift_enter_unavailable: VTE never delivers Shift+Enter
 //
-// VTE 0.82.0 (= VTE_VERSION 8200) is the first release containing the
-// Kitty keyboard protocol; earlier versions cannot distinguish
-// Shift+Enter from bare Enter, so the UI should advertise Alt+Enter
-// for newline insertion instead.
+// No VTE release carries the Kitty keyboard protocol: at 0.82.0 the word
+// "kitty" appears nowhere in the parser or widget, and
+// `_vte_keymap_GDK_Return` encodes only Alt (`ESC CR`), so Shift+Enter is
+// the same bare CR as Enter. The UI advertises Alt+Enter instead.
 
 #[test]
-fn shift_enter_unavailable_legacy_vte_version() {
-    // VTE 0.64.2 (real user report) — well below the KKP cutoff.
-    let ctx = TerminalContext {
-        vte_version: Some("6402".to_owned()),
-        ..Default::default()
-    };
-    assert!(ctx.shift_enter_unavailable());
+fn shift_enter_unavailable_on_every_vte() {
+    for version in [Some("6402"), Some("8200"), Some("8401"), None] {
+        let ctx = TerminalContext {
+            brand: TerminalName::Vte,
+            env_brand: TerminalName::Vte,
+            vte_version: version.map(str::to_owned),
+            ..Default::default()
+        };
+        assert_eq!(ctx.kitty_skip_reason(), Some("vte"), "VTE {version:?}");
+        assert!(ctx.shift_enter_unavailable(), "VTE {version:?}");
+    }
 }
 
 #[test]
-fn shift_enter_unavailable_just_below_cutoff() {
-    // VTE 0.81.99 — anything below 8200 must return true.
-    let ctx = TerminalContext {
-        vte_version: Some("8199".to_owned()),
-        ..Default::default()
-    };
-    assert!(ctx.shift_enter_unavailable());
-}
-
-#[test]
-fn shift_enter_available_modern_vte() {
-    // VTE 0.82.0 — first release with KKP.
-    let ctx = TerminalContext {
-        vte_version: Some("8200".to_owned()),
-        ..Default::default()
-    };
-    assert!(!ctx.shift_enter_unavailable());
-}
-
-#[test]
-fn shift_enter_available_future_vte() {
-    // VTE 0.84.1 — well above the cutoff.
-    let ctx = TerminalContext {
-        vte_version: Some("8401".to_owned()),
-        ..Default::default()
-    };
-    assert!(!ctx.shift_enter_unavailable());
-}
-
-#[test]
-fn shift_enter_unavailable_vte_brand_no_version() {
-    // Brand detected as VTE but VTE_VERSION missing — conservative: old.
-    let ctx = TerminalContext {
-        brand: TerminalName::Vte,
-        vte_version: None,
-        ..Default::default()
-    };
-    assert!(ctx.shift_enter_unavailable());
-}
-
-#[test]
-fn shift_enter_unavailable_unparseable_version() {
-    // Garbage in VTE_VERSION — conservative: old.
-    let ctx = TerminalContext {
-        brand: TerminalName::Vte,
-        vte_version: Some("not-a-number".to_owned()),
-        ..Default::default()
-    };
-    assert!(ctx.shift_enter_unavailable());
+fn shift_enter_unavailable_follows_every_kitty_skip() {
+    // A skipped protocol means the modifier never arrives, whatever the
+    // reason — JediTerm, screen and a multiplexer that eats extended keys
+    // included. Apple Terminal is the one skip with another way in.
+    for ctx in [
+        TerminalContext {
+            brand: TerminalName::JetBrains,
+            env_brand: TerminalName::JetBrains,
+            ..Default::default()
+        },
+        TerminalContext {
+            brand: TerminalName::Kitty,
+            env_brand: TerminalName::Kitty,
+            multiplexer: MultiplexerKind::Screen,
+            ..Default::default()
+        },
+        TerminalContext {
+            brand: TerminalName::Kitty,
+            env_brand: TerminalName::Kitty,
+            multiplexer: MultiplexerKind::Tmux,
+            tmux_version: Some("3.2".to_owned()),
+            ..Default::default()
+        },
+        // A VTE that speaks the protocol still loses it to the multiplexer.
+        TerminalContext {
+            brand: TerminalName::Vte,
+            env_brand: TerminalName::Vte,
+            vte_version: Some("8200".to_owned()),
+            multiplexer: MultiplexerKind::Screen,
+            ..Default::default()
+        },
+    ] {
+        assert!(ctx.kitty_skip_reason().is_some());
+        assert!(
+            ctx.shift_enter_unavailable(),
+            "{:?} skips the protocol, so Shift+Enter cannot arrive",
+            ctx.brand
+        );
+    }
 }
 
 #[test]
