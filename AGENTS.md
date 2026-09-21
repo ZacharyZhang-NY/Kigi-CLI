@@ -116,6 +116,24 @@ a design against the 0.1.15 teardown), MCP servers on protocol 2026-07-28
 - Graph node worktrees are removed right after a successful merge-back;
   only FAILED nodes keep theirs for postmortem.
 
+## Terminal keyboard
+
+`Shift+Enter` inserts a newline in the prompt wherever the terminal can
+report the modifier, and `kitty_skip_reason` decides where that is —
+`shift_enter_unavailable` matches on it rather than keeping a second brand
+list, because the two drifted once and the UI advertised a chord that never
+arrived. Two skips still deliver the modifier: Apple Terminal, where
+`route_enter` polls CoreGraphics, and Windows Terminal, where the console
+key record carries SHIFT with no protocol at all (a bare ConHost is only
+optimistically refined to Windows Terminal, so it keeps advertising
+Alt+Enter). Everywhere else — VTE, xterm.js, JediTerm, screen, tmux below
+3.3, tmux with `extended-keys off` — the byte on the wire is a plain CR and
+no client-side trick recovers it: crossterm 0.28 parses kitty `CSI 13;2u`
+but not xterm's `CSI 27;2;13~`, so `modifyOtherKeys` buys nothing. NO VTE
+release carries the protocol (checked at tag 0.82.0:
+`_vte_keymap_GDK_Return` encodes only Alt); a version cutoff for it is a
+bug, not a feature. `/terminal-setup` owns the per-terminal recipe.
+
 ## Test seams
 
 Cross-crate test hooks are behind the `test-support` cargo feature
