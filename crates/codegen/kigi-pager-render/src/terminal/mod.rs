@@ -438,6 +438,11 @@ impl TerminalContext {
     /// release carries the protocol). Two skips still deliver it — Apple
     /// Terminal drops the flags but `route_enter` polls CoreGraphics, and
     /// Windows console key records carry SHIFT with no protocol at all.
+    ///
+    /// KNOWN GAP: WezTerm inside screen or an old tmux gets Alt+Enter as the
+    /// advice while its own default binding spends that chord on
+    /// ToggleFullScreen. Neither chord reaches kigi there; the multiplexer
+    /// warning carries the real fix, and `\`+Enter still inserts a newline.
     pub fn shift_enter_unavailable(&self) -> bool {
         match self.kitty_skip_reason() {
             None | Some("apple_terminal") => false,

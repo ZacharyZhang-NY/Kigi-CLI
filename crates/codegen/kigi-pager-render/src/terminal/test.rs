@@ -1443,7 +1443,7 @@ fn kitty_skip_vscode_over_tmux() {
 
 #[test]
 fn kitty_skip_vte_version() {
-    // VTE below 0.82 has no Kitty keyboard protocol and crossterm's probe
+    // No VTE release has the Kitty keyboard protocol and crossterm's probe
     // can false-positive on it. https://gitlab.gnome.org/GNOME/vte/-/issues/2601
     let ctx = TerminalContext {
         vte_version: Some("7402".to_owned()),
@@ -1486,7 +1486,8 @@ fn shift_enter_unavailable_on_every_vte() {
 fn shift_enter_unavailable_follows_every_kitty_skip() {
     // A skipped protocol means the modifier never arrives, whatever the
     // reason — JediTerm, screen and a multiplexer that eats extended keys
-    // included. Apple Terminal is the one skip with another way in.
+    // included. Apple Terminal and Windows Terminal are the two skips with
+    // another way in.
     for ctx in [
         TerminalContext {
             brand: TerminalName::JetBrains,
@@ -1506,7 +1507,7 @@ fn shift_enter_unavailable_follows_every_kitty_skip() {
             tmux_version: Some("3.2".to_owned()),
             ..Default::default()
         },
-        // A VTE that speaks the protocol still loses it to the multiplexer.
+        // A VTE carrying a recent VTE_VERSION is no different.
         TerminalContext {
             brand: TerminalName::Vte,
             env_brand: TerminalName::Vte,
