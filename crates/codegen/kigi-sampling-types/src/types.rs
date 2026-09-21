@@ -1198,11 +1198,19 @@ pub const COPILOT_INITIATOR: &str = "user";
 pub const CODEX_ORIGINATOR: &str = "codex_cli_rs";
 /// `OpenAI-Beta` opt-in the Codex Responses endpoint requires.
 pub const CODEX_OPENAI_BETA: &str = "responses=experimental";
+/// Codex CLI version kigi presents to the Codex backend. The models catalog
+/// (`/codex/models?client_version=`) is GATED on it: an old version answers
+/// with a truncated model list (0.104.0 serves no user-facing model at all),
+/// so this tracks a real upstream release (openai/codex rust-v0.155.1).
+macro_rules! codex_client_version {
+    () => {
+        "0.155.1"
+    };
+}
+pub const CODEX_CLIENT_VERSION: &str = codex_client_version!();
 /// `User-Agent` presented on the Codex path (overrides the default kigi UA,
-/// openai-codex-gated). The Codex backend does not strictly validate the UA
-/// string (Pi ships its own and it works), so this is a stable best-effort
-/// identity, not a pinned build.
-pub const CODEX_USER_AGENT: &str = "codex_cli_rs/0.104.0";
+/// openai-codex-gated), carrying the same pinned version.
+pub const CODEX_USER_AGENT: &str = concat!("codex_cli_rs/", codex_client_version!());
 /// JWT payload claim namespace carrying the ChatGPT account id.
 const CODEX_JWT_AUTH_CLAIM: &str = "https://api.openai.com/auth";
 
@@ -1634,6 +1642,16 @@ impl From<crate::messages::MessagesRequest> for MessagesRequestWrapper {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The catalog gate and the UA must claim the SAME codex version: the
+    /// backend serves a truncated model list to an old client_version.
+    #[test]
+    fn codex_user_agent_carries_the_pinned_client_version() {
+        assert_eq!(
+            CODEX_USER_AGENT,
+            format!("codex_cli_rs/{CODEX_CLIENT_VERSION}")
+        );
+    }
 
     /// The Codex backend rejects `role: system` input outright
     /// (400 `{"detail":"System messages are not allowed"}`) — its system

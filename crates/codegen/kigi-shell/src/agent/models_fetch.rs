@@ -363,19 +363,6 @@ fn fetch_one_platform_models(
     bearer: &str,
     enrichment: &kigi_models::enrichment::EnrichmentCatalog,
 ) -> Result<(Vec<crate::agent::config::ModelEntryConfig>, Option<String>), BackendError> {
-    // A platform that serves NO live `/models` listing (openai-codex) delivers a
-    // HARDCODED catalog: short-circuit BEFORE any HTTP, mapping the compiled-in
-    // `WireModel`s through the SAME `platform_wire_model_to_entry` output a live
-    // listing produces (context window + per-model reasoning efforts). The
-    // bearer is unused here (login gates availability; no request is made).
-    if let Some(wire_models) = platform.hardcoded_catalog() {
-        let base_url = platform_fetch_base(platform, endpoints);
-        let models = wire_models
-            .into_iter()
-            .map(|wire| platform_wire_model_to_entry(platform, wire, &base_url))
-            .collect();
-        return Ok((models, None));
-    }
     let client = crate::http::shared_blocking_client();
     let url = match platform.listing() {
         kigi_models::ListingDialect::OpenAi => platform_models_url(platform, endpoints),
@@ -384,6 +371,13 @@ fn fetch_one_platform_models(
         kigi_models::ListingDialect::Anthropic => {
             format!("{}?limit=1000", platform_models_url(platform, endpoints))
         }
+        // The Codex backend REQUIRES client_version (400 without it) and gates
+        // the catalog on it: an old version is answered with a truncated list.
+        kigi_models::ListingDialect::OpenaiCodex => format!(
+            "{}?client_version={}",
+            platform_models_url(platform, endpoints),
+            kigi_sampling_types::CODEX_CLIENT_VERSION
+        ),
     };
     tracing::info!(platform = platform.as_str(), url = %url, "fetching platform models");
     let request = match platform.key_header() {
@@ -473,6 +467,18 @@ fn fetch_one_platform_models(
                 BackendError::RequestFailed {
                     status: 200,
                     body: format!("anthropic listing parse failed: {e}"),
+                }
+            })?
+        }
+        // The Codex backend serves `{models:[...]}` with its own availability
+        // fields; the adapter keeps the shown + API-served models and carries
+        // context window and per-model reasoning levels.
+        kigi_models::ListingDialect::OpenaiCodex => {
+            let body = response.text()?;
+            kigi_models::parse_openai_codex_listing(&body).map_err(|e| {
+                BackendError::RequestFailed {
+                    status: 200,
+                    body: format!("codex listing parse failed: {e}"),
                 }
             })?
         }
@@ -1471,25 +1477,36 @@ mod tests {
         );
     }
 
-    /// openai-codex fetch: the catalog is HARDCODED, so the fetch path
-    /// short-circuits BEFORE any HTTP — there is NO mock `/models` server, yet
-    /// the fetch returns exactly the 4 compiled-in models keyed
-    /// `openai-codex/<slug>` on the Responses backend, ctx 272000, each exposing
-    /// its exact reasoning efforts (incl. the codex-only `xhigh`/`max`).
-    /// A BOGUS base URL confirms no live `/models` request is attempted (it would
-    /// otherwise fail against an unroutable host).
+    /// openai-codex e2e: the catalog is LIVE. The request carries the pinned
+    /// `client_version` (the backend 400s without it and truncates the list for
+    /// an old one) and the session bearer; the hidden model is dropped, and the
+    /// kept ones are keyed `openai-codex/<slug>` on the Responses backend with
+    /// their wire context window and efforts (`ultra`, which Kigi has no level
+    /// for, is dropped).
     #[tokio::test(flavor = "multi_thread")]
     #[serial_test::serial]
-    async fn openai_codex_catalog_is_hardcoded_with_no_http_fetch() {
-        // Unroutable base: if the fetch path tried a live `/models` request it
-        // would error here; the hardcoded short-circuit ignores it for fetching.
-        let _base = kigi_test_support::EnvGuard::set(
-            kigi_models::CODEX_BASE_URL_ENV,
-            "http://127.0.0.1:1/codex",
-        );
+    async fn openai_codex_catalog_comes_from_the_live_listing() {
+        const BODY: &str = r#"{"models":[{"slug":"gpt-6-astra","display_name":"GPT-6-Astra","visibility":"list","supported_in_api":true,"context_window":272000,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"}],"input_modalities":["text","image"]},{"slug":"gpt-reserve","display_name":"GPT-Reserve","visibility":"hide","supported_in_api":true,"context_window":272000,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"}],"input_modalities":["text","image"]},{"slug":"gpt-5.5","display_name":"GPT-5.5","visibility":"list","supported_in_api":true,"context_window":272000,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"}],"input_modalities":["text","image"]}]}"#;
+        let codex_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/models"))
+            .and(wiremock::matchers::query_param(
+                "client_version",
+                kigi_sampling_types::CODEX_CLIENT_VERSION,
+            ))
+            .and(wiremock::matchers::header(
+                "Authorization",
+                "Bearer codex-session-tok",
+            ))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_raw(BODY, "application/json"),
+            )
+            .expect(1)
+            .mount(&codex_server)
+            .await;
+        let _base =
+            kigi_test_support::EnvGuard::set(kigi_models::CODEX_BASE_URL_ENV, codex_server.uri());
         let endpoints = crate::agent::config::EndpointsConfig::default();
-        // The session token merely marks openai-codex "enabled"; it is unused by
-        // the hardcoded path (no request rides it).
         let mut oauth_tokens = OAuthSessionTokens::new();
         oauth_tokens.insert(
             kigi_models::PlatformId::OpenaiCodex,
@@ -1501,7 +1518,7 @@ mod tests {
         })
         .await
         .unwrap()
-        .expect("openai-codex hardcoded catalog fetch must succeed with no HTTP");
+        .expect("openai-codex listing fetch must succeed");
 
         assert_eq!(
             result
@@ -1509,57 +1526,35 @@ mod tests {
                 .iter()
                 .map(|m| m.id.as_deref().unwrap_or_default())
                 .collect::<Vec<_>>(),
-            vec![
-                "openai-codex/gpt-5.6-sol",
-                "openai-codex/gpt-5.6-terra",
-                "openai-codex/gpt-5.6-luna",
-                "openai-codex/gpt-5.5",
-            ],
-            "exactly the 4 hardcoded models, keyed openai-codex/<slug>"
+            vec!["openai-codex/gpt-6-astra", "openai-codex/gpt-5.5"],
+            "hidden models never reach the picker"
         );
-        // Excluded models never appear.
-        for absent in [
-            "openai-codex/gpt-5.3-codex-spark",
-            "openai-codex/gpt-5.4",
-            "openai-codex/gpt-5.4-mini",
-            "openai-codex/codex-auto-review",
-        ] {
-            assert!(
-                !result
-                    .models
-                    .iter()
-                    .any(|m| m.id.as_deref() == Some(absent)),
-                "{absent} must be absent from the hardcoded catalog"
-            );
-        }
-        let sol = &result.models[0];
+        let astra = &result.models[0];
         assert_eq!(
-            sol.api_backend,
+            astra.api_backend,
             crate::sampling::ApiBackend::Responses,
             "openai-codex speaks the Responses wire"
         );
-        assert_eq!(sol.context_window.get(), 272_000);
-        assert_eq!(sol.name.as_deref(), Some("GPT-5.6-Sol"));
+        assert_eq!(astra.context_window.get(), 272_000);
+        assert_eq!(astra.name.as_deref(), Some("GPT-6-Astra"));
         assert!(
-            sol.supported_in_api,
-            "openai-codex carries its OWN pooled credential — it must NOT be \
-             gated on the primary (Kimi) session"
+            astra.supported_in_api,
+            "openai-codex carries its OWN pooled credential — it must NOT be              gated on the primary (Kimi) session"
         );
         assert!(
-            visible_to_non_primary_session_user(sol),
-            "a ChatGPT/Codex-only user has no primary OAuth session; their \
-             models must still appear in the picker"
+            visible_to_non_primary_session_user(astra),
+            "a ChatGPT/Codex-only user has no primary OAuth session; their              models must still appear in the picker"
         );
-        assert!(sol.supports_reasoning_effort);
+        assert!(astra.supports_reasoning_effort);
         assert_eq!(
-            sol.reasoning_efforts
+            astra
+                .reasoning_efforts
                 .iter()
                 .map(|o| o.id.as_str())
                 .collect::<Vec<_>>(),
             vec!["low", "medium", "high", "xhigh", "max"],
-            "sol exposes the full codex effort menu"
+            "`ultra` has no Kigi level and is dropped"
         );
-        // gpt-5.5 tops out at xhigh (no max).
         let five_five = result
             .models
             .iter()
