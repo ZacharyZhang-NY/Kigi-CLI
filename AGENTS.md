@@ -385,11 +385,15 @@ client-side, no backend surface.
       carries the thinking level. NO websocket, NO base_instructions.
       CATALOG is HARDCODED (`PlatformId::hardcoded_catalog` →
       `openai_codex_wire_models`, mapped through the SAME
-      `platform_wire_model_to_entry` output): exactly the 4 `visibility=list` &&
-      `supported_in_api=true` models (`gpt-5.6-sol/terra/luna`, `gpt-5.5`, ctx
-      272000, per-model efforts) — NO live `/models` fetch, NO codex-CLI /
-      `~/.codex` dependency; `gpt-5.3-codex-spark` (api=false) and
-      `gpt-5.4`/`gpt-5.4-mini`/`codex-auto-review` (hidden) are EXCLUDED.
+      `platform_wire_model_to_entry` output): the 5 `visibility=list` &&
+      `supported_in_api=true` models the backend served on 2026-09-21
+      (`gpt-6-astra`, `gpt-5.6-sol/terra/luna`, `gpt-5.5`, ctx 272000,
+      per-model efforts) — NO live `/models` fetch, NO codex-CLI / `~/.codex`
+      dependency; the hidden `gpt-reserve` and `codex-auto-review` are
+      EXCLUDED. Refresh the table by reading
+      `GET {base}/models?client_version=<a current codex release>` with a
+      ChatGPT bearer: an old `client_version` is answered with a truncated
+      list, so a stale version reads as "the model does not exist".
   - `OAuthFlow::GithubDeviceCopilot` → `auth::github_copilot` (TWO-STAGE).
     Provider: `github-copilot` (`scope_key oauth/github-copilot`, base
     `api.individual.githubcopilot.com`, ChatCompletions wire). Stage 1 is an
