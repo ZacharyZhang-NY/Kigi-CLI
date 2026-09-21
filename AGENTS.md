@@ -532,8 +532,8 @@ client-side, no backend surface.
   `~/.kigi/models_dev_cache.json`). Wire values always win; enrichment
   never invents model availability. Canonical reasoning efforts:
   none/minimal/low/medium/high/xhigh/max (`max` split from `xhigh` 2026-07;
-  `ultra` was dropped the same month, no backend accepts it; Kimi wire
-  spells its top tier `max`, kimi_compat renames). config.toml accepts any
+  the Codex backend advertises an `ultra` tier above `max` that kigi has no
+  level for; Kimi wire spells its top tier `max`, kimi_compat renames). config.toml accepts any
   letter case: `ReasoningEffort` deserializes through `FromStr`.
 
 ## Milestones (PRD §8.3)
