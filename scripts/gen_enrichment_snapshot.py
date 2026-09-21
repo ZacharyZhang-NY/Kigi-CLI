@@ -24,7 +24,7 @@ TARGETS = [
     "anthropic", "azure", "openai", "deepseek", "nvidia", "google",
     "amazon-bedrock", "mistral", "groq", "cerebras", "cloudflare-ai-gateway",
     "xai", "togetherai", "fireworks-ai", "opencode", "opencode-go",
-    "kimi-for-coding", "moonshotai", "moonshotai-cn", "minimax", "minimax-cn",
+    "kimi-code-plan-cn", "moonshotai", "moonshotai-cn", "minimax", "minimax-cn",
     "alibaba-token-plan", "alibaba-token-plan-cn", "xiaomi",
     "xiaomi-token-plan-cn", "zai-coding-plan", "zhipuai-coding-plan",
     "github-copilot", "vercel",

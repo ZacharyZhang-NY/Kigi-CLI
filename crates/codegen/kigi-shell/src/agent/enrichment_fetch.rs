@@ -367,7 +367,7 @@ mod tests {
         let _url = EnvGuard::set(MODELS_DEV_URL_ENV, "http://127.0.0.1:1/api.json");
         let catalog = load_enrichment_catalog_at(&path);
         assert!(
-            kigi_models::enrichment::lookup(&catalog, "kimi-for-coding", "k3").is_some(),
+            kigi_models::enrichment::lookup(&catalog, "kimi-code-plan-cn", "k3").is_some(),
             "bundled snapshot must back a total refresh failure"
         );
         assert!(!path.exists(), "failed refresh must not write a cache");
@@ -385,7 +385,7 @@ mod tests {
             let _url = EnvGuard::set(MODELS_DEV_URL_ENV, token);
             assert!(refresh_url().is_none(), "token {token:?} must disable");
             let catalog = load_enrichment_catalog_at(&path);
-            assert!(kigi_models::enrichment::lookup(&catalog, "kimi-for-coding", "k3").is_some());
+            assert!(kigi_models::enrichment::lookup(&catalog, "kimi-code-plan-cn", "k3").is_some());
         }
     }
 

@@ -223,13 +223,28 @@ mod tests {
             "snapshot lost providers: {}",
             catalog.len()
         );
-        let k3 = lookup(catalog, "kimi-for-coding", "k3").expect("k3 present");
+        let k3 = lookup(catalog, "kimi-code-plan-cn", "k3").expect("k3 present");
         assert_eq!(k3.context, 1_048_576, "k3 context must match the live wire");
         assert_eq!(k3.efforts, ["low", "high", "max"]);
         assert!(k3.reasoning);
         let opus = lookup(catalog, "anthropic", "claude-opus-4-8").expect("opus present");
         assert_eq!(opus.context, 1_000_000);
         assert_eq!(opus.efforts, ["low", "medium", "high", "xhigh", "max"]);
+    }
+
+    /// `restrict_to_enriched` drops a live listing id the enrichment catalog
+    /// does not know, so the bundled snapshot must admit the current flagship
+    /// models offline: grok-4.7 on xai (the `xai`/`xai-grok` rows) and
+    /// gpt-6-astra on the API-key `openai` row.
+    #[test]
+    fn bundled_snapshot_admits_the_current_flagship_models() {
+        let catalog = bundled_enrichment();
+        let grok = lookup(catalog, "xai", "grok-4.7").expect("grok-4.7 present");
+        assert!(grok.tool_call, "a non-tool-calling model is dropped");
+        assert_eq!(grok.context, 500_000);
+        let astra = lookup(catalog, "openai", "gpt-6-astra").expect("gpt-6-astra present");
+        assert!(astra.tool_call);
+        assert_eq!(astra.context, 1_050_000);
     }
 
     /// Wire-served fields are never overwritten; absent fields are filled.
