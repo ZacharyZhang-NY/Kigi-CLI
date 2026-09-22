@@ -1156,7 +1156,7 @@ pub const ANTHROPIC_OAUTH_BETA: &str = "claude-code-20250219,oauth-2025-04-20";
 
 /// User-Agent kigi presents on the Claude-Code OAuth path (mirrors the
 /// official Claude Code CLI). OAuth-gated: unrelated to the default kigi UA.
-pub const CLAUDE_CODE_USER_AGENT: &str = "claude-cli/2.1.75";
+pub const CLAUDE_CODE_USER_AGENT: &str = "claude-cli/2.1.280";
 
 /// System-prompt prefix REQUIRED on the Claude-Code OAuth Messages path: the
 /// OAuth token is Claude-Code-scoped, so Anthropic rejects the request unless
