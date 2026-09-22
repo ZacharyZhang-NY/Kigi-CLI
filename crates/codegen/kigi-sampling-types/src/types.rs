@@ -1202,7 +1202,7 @@ pub const CODEX_OPENAI_BETA: &str = "responses=experimental";
 /// openai-codex-gated). The Codex backend does not strictly validate the UA
 /// string (Pi ships its own and it works), so this is a stable best-effort
 /// identity, not a pinned build.
-pub const CODEX_USER_AGENT: &str = "codex_cli_rs/0.104.0";
+pub const CODEX_USER_AGENT: &str = "codex_cli_rs/0.156.0";
 /// JWT payload claim namespace carrying the ChatGPT account id.
 const CODEX_JWT_AUTH_CLAIM: &str = "https://api.openai.com/auth";
 
