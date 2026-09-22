@@ -1473,7 +1473,7 @@ mod tests {
 
     /// openai-codex fetch: the catalog is HARDCODED, so the fetch path
     /// short-circuits BEFORE any HTTP — there is NO mock `/models` server, yet
-    /// the fetch returns exactly the 5 compiled-in models keyed
+    /// the fetch returns exactly the 7 compiled-in models keyed
     /// `openai-codex/<slug>` on the Responses backend, ctx 272000, each exposing
     /// its exact reasoning efforts (incl. the codex-only `xhigh`/`max`).
     /// A BOGUS base URL confirms no live `/models` request is attempted (it would
@@ -1511,12 +1511,14 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 "openai-codex/gpt-6-astra",
+                "openai-codex/gpt-6-sol",
+                "openai-codex/gpt-6-luna",
                 "openai-codex/gpt-5.6-sol",
                 "openai-codex/gpt-5.6-terra",
                 "openai-codex/gpt-5.6-luna",
                 "openai-codex/gpt-5.5",
             ],
-            "exactly the 5 hardcoded models, keyed openai-codex/<slug>"
+            "exactly the 7 hardcoded models, keyed openai-codex/<slug>"
         );
         // Excluded models never appear.
         for absent in ["openai-codex/gpt-reserve", "openai-codex/codex-auto-review"] {

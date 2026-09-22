@@ -1570,8 +1570,8 @@ impl PlatformId {
     /// The compiled-in catalog for a platform that serves NO live `/models`
     /// listing (openai-codex), or `None` when the catalog comes from the wire.
     ///
-    /// openai-codex's 5 models are HARDCODED (read from the Codex backend
-    /// catalog on 2026-09-21, the `visibility=="list"` AND
+    /// openai-codex's 7 models are HARDCODED (read from the Codex backend
+    /// catalog on 2026-09-22, the `visibility=="list"` AND
     /// `supported_in_api==true` set) because OpenAI exposes no stable public
     /// models endpoint for the
     /// ChatGPT Codex backend. Each entry carries context window + per-model
@@ -1607,18 +1607,30 @@ fn codex_wire_model(slug: &str, display_name: &str, efforts: &[&str], default: &
     }
 }
 
-/// The HARDCODED openai-codex catalog: exactly the 5 `visibility=="list"` AND
-/// `supported_in_api==true` models the Codex backend served on 2026-09-21, in
+/// The HARDCODED openai-codex catalog: exactly the 7 `visibility=="list"` AND
+/// `supported_in_api==true` models the Codex backend served on 2026-09-22, in
 /// its own priority order. `gpt-reserve` and `codex-auto-review`
 /// (visibility="hide") are deliberately EXCLUDED — they are not user-facing
-/// (fail-fast: never advertise a model the backend rejects). `gpt-6-astra`
-/// also advertises an `ultra` tier above `max`; kigi has no such level, so it
+/// (fail-fast: never advertise a model the backend rejects). Several models
+/// also advertise an `ultra` tier above `max`; kigi has no such level, so it
 /// is not listed here.
 fn openai_codex_wire_models() -> Vec<WireModel> {
     vec![
         codex_wire_model(
             "gpt-6-astra",
             "GPT-6-Astra",
+            &["low", "medium", "high", "xhigh", "max"],
+            "medium",
+        ),
+        codex_wire_model(
+            "gpt-6-sol",
+            "GPT-6-Sol",
+            &["low", "medium", "high", "xhigh", "max"],
+            "medium",
+        ),
+        codex_wire_model(
+            "gpt-6-luna",
+            "GPT-6-Luna",
             &["low", "medium", "high", "xhigh", "max"],
             "medium",
         ),
@@ -2661,13 +2673,13 @@ mod tests {
         assert_eq!(c.base_url(), "https://mock.codex/codex");
     }
 
-    /// The HARDCODED openai-codex catalog is exactly the 5 supported+listed
+    /// The HARDCODED openai-codex catalog is exactly the 7 supported+listed
     /// models, keyed by slug, ctx 272000, each exposing its exact supported
     /// efforts (incl. the codex-only `xhigh`/`max` tiers). The hidden models
     /// are absent. Every other platform serves NO hardcoded catalog (its
     /// models come from the live wire).
     #[test]
-    fn openai_codex_hardcoded_catalog_is_the_five_supported_models() {
+    fn openai_codex_hardcoded_catalog_is_the_seven_supported_models() {
         let catalog = PlatformId::OpenaiCodex
             .hardcoded_catalog()
             .expect("openai-codex serves a hardcoded catalog");
@@ -2676,12 +2688,14 @@ mod tests {
             ids,
             vec![
                 "gpt-6-astra",
+                "gpt-6-sol",
+                "gpt-6-luna",
                 "gpt-5.6-sol",
                 "gpt-5.6-terra",
                 "gpt-5.6-luna",
                 "gpt-5.5"
             ],
-            "exactly the 5 visibility=list AND supported_in_api=true models"
+            "exactly the 7 visibility=list AND supported_in_api=true models"
         );
         // Excluded: hidden models never appear.
         for absent in ["gpt-reserve", "codex-auto-review"] {
@@ -2715,6 +2729,14 @@ mod tests {
             "`ultra` is advertised above `max` but kigi has no such level"
         );
         assert_eq!(
+            efforts("gpt-6-sol"),
+            ["low", "medium", "high", "xhigh", "max"]
+        );
+        assert_eq!(
+            efforts("gpt-6-luna"),
+            ["low", "medium", "high", "xhigh", "max"]
+        );
+        assert_eq!(
             efforts("gpt-5.6-sol"),
             ["low", "medium", "high", "xhigh", "max"]
         );
@@ -2740,6 +2762,8 @@ mod tests {
                 .clone()
         };
         assert_eq!(default("gpt-6-astra").as_deref(), Some("medium"));
+        assert_eq!(default("gpt-6-sol").as_deref(), Some("medium"));
+        assert_eq!(default("gpt-6-luna").as_deref(), Some("medium"));
         assert_eq!(default("gpt-5.6-sol").as_deref(), Some("low"));
         assert_eq!(default("gpt-5.6-terra").as_deref(), Some("medium"));
         // Only openai-codex has a hardcoded catalog; every wire platform is None.
