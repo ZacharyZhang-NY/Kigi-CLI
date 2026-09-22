@@ -403,9 +403,9 @@ client-side, no backend surface.
       carries the thinking level. NO websocket, NO base_instructions.
       CATALOG is HARDCODED (`PlatformId::hardcoded_catalog` →
       `openai_codex_wire_models`, mapped through the SAME
-      `platform_wire_model_to_entry` output): the 5 `visibility=list` &&
-      `supported_in_api=true` models the backend served on 2026-09-21
-      (`gpt-6-astra`, `gpt-5.6-sol/terra/luna`, `gpt-5.5`, ctx 272000,
+      `platform_wire_model_to_entry` output): the 7 `visibility=list` &&
+      `supported_in_api=true` models the backend served on 2026-09-22
+      (`gpt-6-astra/sol/luna`, `gpt-5.6-sol/terra/luna`, `gpt-5.5`, ctx 272000,
       per-model efforts) — NO live `/models` fetch, NO codex-CLI / `~/.codex`
       dependency; the hidden `gpt-reserve` and `codex-auto-review` are
       EXCLUDED. Refresh the table by reading
