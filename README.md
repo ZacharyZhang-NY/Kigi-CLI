@@ -39,6 +39,13 @@ key? OpenAI, Anthropic, Google, DeepSeek, Groq, Moonshot and
 curl -fsSL https://kigicli.dev/install.sh | bash
 ```
 
+Arch Linux users can install [`kigi-bin` from the AUR](https://aur.archlinux.org/packages/kigi-bin)
+with an AUR helper such as `yay`:
+
+```sh
+yay -S kigi-bin
+```
+
 ```powershell
 # Windows PowerShell
 irm https://kigicli.dev/install.ps1 | iex
@@ -50,7 +57,8 @@ kigi         # go
 ```
 
 Single file, no runtime. macOS and Linux on arm64/x86_64, Windows on x86_64,
-checksummed against the release's `SHA256SUMS`. `kigi update` handles upgrades.
+checksummed against the release's `SHA256SUMS`. For direct installs, `kigi update`
+handles upgrades. AUR users should update through their AUR helper.
 
 ## Graph engineering
 
