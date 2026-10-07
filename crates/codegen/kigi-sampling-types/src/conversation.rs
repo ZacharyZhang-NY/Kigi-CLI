@@ -3106,7 +3106,7 @@ const ANTHROPIC_IMAGE_MEDIA_TYPES: [&str; 4] =
 /// (`data:image/webp;name=x;base64,…` yields media type
 /// `"image/webp;name=x"` → 400). Callers degrade to a short text
 /// placeholder — never the raw URI, which for data URIs can be megabytes.
-fn parse_base64_image_data_uri(url: &str) -> Option<(String, String)> {
+pub(crate) fn parse_base64_image_data_uri(url: &str) -> Option<(String, String)> {
     let rest = url.strip_prefix("data:")?;
     let (media_type, data) = rest.split_once(";base64,")?;
     let media_type = media_type.to_ascii_lowercase();
@@ -3474,7 +3474,12 @@ fn prune_replayed_thinking(messages: &mut Vec<crate::messages::Message>) {
             ContentBlock::Thinking {
                 thinking,
                 signature,
-            } => keep_thinking && !thinking.is_empty() && !signature.is_empty(),
+            } => {
+                keep_thinking
+                    && !thinking.is_empty()
+                    && !signature.is_empty()
+                    && !signature.starts_with(crate::devin::DEVIN_SIGNATURE_PREFIX)
+            }
             _ => true,
         });
         !blocks.is_empty()
@@ -5949,6 +5954,40 @@ mod tests {
                 .iter()
                 .any(|b| b["type"] == "tool_use"),
             "the kept thinking belongs to the tool_use turn"
+        );
+    }
+
+    #[test]
+    fn messages_request_drops_devin_signature_envelope_but_keeps_ordinary() {
+        let devin_sig = crate::devin::pack_devin_signature("MODEL_X", "sig-devin", "sealed");
+        let req = ConversationRequest::from_items(vec![
+            ConversationItem::user("q0"),
+            reasoning("ordinary signed reasoning", Some("sig-anthropic")),
+            reasoning("devin signed reasoning", Some(devin_sig.as_str())),
+            ConversationItem::Assistant(AssistantItem {
+                content: "".into(),
+                tool_calls: vec![ToolCall {
+                    id: std::sync::Arc::from("tc1"),
+                    name: "read_file".to_string(),
+                    arguments: std::sync::Arc::from("{}"),
+                }],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+            }),
+            ConversationItem::tool_result("tc1", "file contents"),
+        ]);
+        let json = serde_json::to_value(build_messages_request(&req)).unwrap();
+        let blocks = thinking_blocks(&json);
+        assert!(
+            blocks.iter().any(|(_, _, sig)| sig == "sig-anthropic"),
+            "the ordinary signature on the open loop must survive:\n{json:#}"
+        );
+        assert!(
+            !blocks
+                .iter()
+                .any(|(_, _, sig)| sig.contains("kigi-devin-v1")),
+            "the devin envelope must never reach the Anthropic wire:\n{json:#}"
         );
     }
 

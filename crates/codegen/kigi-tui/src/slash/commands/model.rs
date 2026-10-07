@@ -5,7 +5,7 @@
 use agent_client_protocol as acp;
 use kigi_shell::sampling::types::supports_reasoning_effort_meta;
 
-use crate::acp::model_state::ModelState;
+use crate::acp::model_state::{ModelState, model_family, model_variant_name, native_fusion};
 use crate::app::actions::Action;
 use crate::slash::command::{AppCtx, ArgItem, CommandExecCtx, CommandResult, SlashCommand};
 use crate::slash::commands::effort_levels::build_effort_arg_items;
@@ -55,6 +55,10 @@ impl SlashCommand for ModelCommand {
     fn suggest_args(&self, ctx: &AppCtx, args_query: &str) -> Option<Vec<ArgItem>> {
         if ctx.models.is_empty() {
             return None;
+        }
+
+        if let Some(family_id) = detect_family_phase(ctx.models, args_query) {
+            return Some(build_family_items(ctx.models, &family_id));
         }
 
         // Effort phase if input is "<reasoning-model> ", else model phase.
@@ -148,6 +152,71 @@ fn detect_effort_phase(models: &ModelState, args_query: &str) -> Option<acp::Mod
     None
 }
 
+fn detect_family_phase(models: &ModelState, args_query: &str) -> Option<String> {
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut best: Option<(usize, String)> = None;
+    for info in models.available.values() {
+        if native_fusion(info).is_some() {
+            continue;
+        }
+        let Some(family) = model_family(info) else {
+            continue;
+        };
+        if !seen.insert(family.id.clone()) {
+            continue;
+        }
+        for token in [
+            family.name.clone(),
+            format!("devin/{}", family.id),
+            format!("devin/{}", family.name),
+        ] {
+            if args_query.len() > token.len()
+                && args_query.is_char_boundary(token.len())
+                && args_query[..token.len()].eq_ignore_ascii_case(&token)
+                && args_query[token.len()..].starts_with(char::is_whitespace)
+                && best.as_ref().is_none_or(|(len, _)| token.len() > *len)
+            {
+                best = Some((token.len(), family.id.clone()));
+            }
+        }
+    }
+    best.map(|(_, family_id)| family_id)
+}
+
+fn build_family_items(models: &ModelState, family_id: &str) -> Vec<ArgItem> {
+    let current_id = models.current.as_ref();
+    let mut items: Vec<ArgItem> = Vec::new();
+    for (id, info) in &models.available {
+        if native_fusion(info).is_some() {
+            continue;
+        }
+        let Some(family) = model_family(info) else {
+            continue;
+        };
+        if family.id != family_id {
+            continue;
+        }
+        let variant = model_variant_name(info, &family);
+        let mut display = variant.to_string();
+        if current_id == Some(id) {
+            display.push_str(" (current)");
+        }
+        if family.is_default {
+            display.push_str(" (default)");
+        }
+        items.push(ArgItem {
+            match_text: format!(
+                "{} devin/{} devin/{} {}",
+                family.name, family.id, family.name, info.name
+            ),
+            display,
+            insert_text: id.0.to_string(),
+            description: String::new(),
+        });
+    }
+    items
+}
+
 /// One row per logical model. Reasoning models get a trailing space in
 /// `insert_text` so the prompt widget chains into the effort sub-menu.
 /// The description column names the model's provider (shell-stamped
@@ -155,8 +224,46 @@ fn detect_effort_phase(models: &ModelState, args_query: &str) -> Option<acp::Mod
 /// when the model carries no description of its own.
 fn build_model_items(models: &ModelState) -> Vec<ArgItem> {
     let current_id = models.current.as_ref();
+    let mut member_counts: indexmap::IndexMap<String, usize> = indexmap::IndexMap::new();
+    for info in models.available.values() {
+        if native_fusion(info).is_some() {
+            continue;
+        }
+        if let Some(family) = model_family(info) {
+            *member_counts.entry(family.id).or_default() += 1;
+        }
+    }
+    let mut emitted: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut items: Vec<ArgItem> = Vec::with_capacity(models.available.len());
     for (id, info) in &models.available {
+        if native_fusion(info).is_some() {
+            continue;
+        }
+        if let Some(family) = model_family(info)
+            && member_counts.get(&family.id).copied().unwrap_or(0) > 1
+        {
+            if emitted.insert(family.id.clone()) {
+                let any_current = models.available.iter().any(|(mid, minfo)| {
+                    current_id == Some(mid)
+                        && native_fusion(minfo).is_none()
+                        && model_family(minfo).is_some_and(|f| f.id == family.id)
+                });
+                items.push(ArgItem {
+                    display: if any_current {
+                        format!("{} (current)", family.name)
+                    } else {
+                        family.name.clone()
+                    },
+                    match_text: format!(
+                        "{} devin/{} devin/{}",
+                        family.name, family.id, family.name
+                    ),
+                    insert_text: format!("devin/{} ", family.id),
+                    description: "Devin · model variants".to_string(),
+                });
+            }
+            continue;
+        }
         let is_current = current_id == Some(id);
         let supports = supports_reasoning_effort(info);
 
@@ -504,6 +611,176 @@ mod tests {
             }
             other => panic!("expected Action::SetDefaultModel(<id>), got {other:?}"),
         }
+    }
+
+    fn family_model(
+        id: &str,
+        name: &str,
+        family_id: &str,
+        family_name: &str,
+        is_default: bool,
+    ) -> (acp::ModelId, acp::ModelInfo) {
+        let id = acp::ModelId::new(Arc::from(id));
+        let info = acp::ModelInfo::new(id.clone(), name.to_string()).meta(
+            serde_json::json!({
+                "modelFamily": {"id": family_id, "name": family_name, "isDefault": is_default},
+            })
+            .as_object()
+            .cloned(),
+        );
+        (id, info)
+    }
+
+    fn app_ctx(models: &ModelState) -> AppCtx<'_> {
+        AppCtx {
+            models,
+            cwd: std::path::Path::new("."),
+            screen_mode: crate::app::ScreenMode::Fullscreen,
+        }
+    }
+
+    #[test]
+    fn root_phase_one_row_per_devin_family_and_variants_hidden() {
+        let mut state = ModelState::default();
+        for (id, name, def) in [
+            ("devin/swe-2-high", "SWE-2 High", false),
+            ("devin/swe-2-medium", "SWE-2 Medium", true),
+            ("devin/swe-2-high-fast", "SWE-2 High Fast", false),
+            ("devin/opus-medium", "Claude Opus 5.5 Medium", false),
+            ("devin/opus-max", "Claude Opus 5.5 Max", true),
+        ] {
+            let (fid, finfo) = if id.contains("opus") {
+                family_model(id, name, "claude-opus-5-5", "Claude Opus 5.5", def)
+            } else {
+                family_model(id, name, "swe-2", "SWE-2", def)
+            };
+            state.available.insert(fid, finfo);
+        }
+        let (pid, pinfo) = plain_model("kigi-4.5", "Kigi 4.5");
+        state.available.insert(pid, pinfo);
+
+        let cmd = ModelCommand;
+        let ctx = app_ctx(&state);
+        let items = cmd.suggest_args(&ctx, "").unwrap();
+        let displays: Vec<&str> = items.iter().map(|i| i.display.as_str()).collect();
+        assert_eq!(
+            displays,
+            vec!["SWE-2", "Claude Opus 5.5", "Kigi 4.5"],
+            "one root row per multi-member family; variants hidden"
+        );
+        let swe = &items[0];
+        assert_eq!(swe.insert_text, "devin/swe-2 ");
+        assert_eq!(swe.description, "Devin · model variants");
+        assert!(swe.match_text.contains("SWE-2"));
+        assert!(swe.match_text.contains("devin/swe-2"));
+    }
+
+    #[test]
+    fn family_phase_after_root_token_lists_every_variant_with_real_uid() {
+        let mut state = ModelState::default();
+        for (id, name, def) in [
+            ("devin/swe-2-high", "SWE-2 High", false),
+            ("devin/swe-2-medium", "SWE-2 Medium", true),
+            ("devin/swe-2-high-fast", "SWE-2 High Fast", false),
+        ] {
+            let (fid, finfo) = family_model(id, name, "swe-2", "SWE-2", def);
+            state.available.insert(fid, finfo);
+        }
+        let cmd = ModelCommand;
+        let ctx = app_ctx(&state);
+
+        for query in ["devin/swe-2 ", "SWE-2 ", "devin/SWE-2 hi"] {
+            let items = cmd.suggest_args(&ctx, query).unwrap();
+            assert_eq!(items.len(), 3, "query {query}: all variants offered");
+            let inserts: Vec<&str> = items.iter().map(|i| i.insert_text.as_str()).collect();
+            assert_eq!(
+                inserts,
+                vec![
+                    "devin/swe-2-high",
+                    "devin/swe-2-medium",
+                    "devin/swe-2-high-fast"
+                ],
+                "query {query}: children insert the actual catalog uid"
+            );
+            assert_eq!(items[0].display, "High");
+            assert_eq!(items[1].display, "Medium (default)");
+            assert_eq!(items[2].display, "High Fast");
+        }
+    }
+
+    #[test]
+    fn family_run_resolves_name_to_default_variant_and_exact_id_stays() {
+        let mut state = ModelState::default();
+        for (id, name, def) in [
+            ("devin/swe-2-high", "SWE-2 High", false),
+            ("devin/swe-2-medium", "SWE-2 Medium", true),
+        ] {
+            let (fid, finfo) = family_model(id, name, "swe-2", "SWE-2", def);
+            state.available.insert(fid, finfo);
+        }
+        let mut ctx = dummy_exec_ctx(&state);
+        match ModelCommand.run(&mut ctx, "SWE-2") {
+            CommandResult::Action(Action::SetDefaultModel(id)) => {
+                assert_eq!(id.0.as_ref(), "devin/swe-2-medium");
+            }
+            other => panic!("family name resolves default variant, got {other:?}"),
+        }
+        match ModelCommand.run(&mut ctx, "devin/swe-2-high") {
+            CommandResult::Action(Action::SetDefaultModel(id)) => {
+                assert_eq!(id.0.as_ref(), "devin/swe-2-high");
+            }
+            other => panic!("concrete uid resolves itself, got {other:?}"),
+        }
+        match ModelCommand.run(&mut ctx, "SWE-2 High") {
+            CommandResult::Action(Action::SetDefaultModel(id)) => {
+                assert_eq!(id.0.as_ref(), "devin/swe-2-high");
+            }
+            other => panic!("full variant name resolves itself, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn family_phase_prefers_longest_overlapping_token() {
+        let mut state = ModelState::default();
+        let (a, ai) = family_model("devin/swe-2-high", "SWE-2 High", "swe-2", "SWE-2", false);
+        let (b, bi) = family_model(
+            "devin/swe-2-pro-max",
+            "SWE-2 Pro Max",
+            "swe-2-pro",
+            "SWE-2 Pro",
+            false,
+        );
+        state.available.insert(a, ai);
+        state.available.insert(b, bi);
+        let cmd = ModelCommand;
+        let ctx = app_ctx(&state);
+        let items = cmd.suggest_args(&ctx, "SWE-2 Pro m").unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].insert_text, "devin/swe-2-pro-max");
+    }
+
+    #[test]
+    fn family_root_shows_current_when_a_variant_is_active() {
+        let mut state = ModelState::default();
+        let (a, ai) = family_model("devin/swe-2-high", "SWE-2 High", "swe-2", "SWE-2", false);
+        let (b, bi) = family_model("devin/swe-2-max", "SWE-2 Max", "swe-2", "SWE-2", true);
+        state.available.insert(a.clone(), ai);
+        state.available.insert(b, bi);
+        state.current = Some(a);
+        let items = build_model_items(&state);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].display, "SWE-2 (current)");
+    }
+
+    #[test]
+    fn singleton_family_rows_stay_flat() {
+        let mut state = ModelState::default();
+        let (a, ai) = family_model("devin/adaptive", "Adaptive", "adaptive", "Adaptive", true);
+        state.available.insert(a, ai);
+        let items = build_model_items(&state);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].insert_text, "Adaptive");
+        assert_eq!(items[0].display, "Adaptive");
     }
 
     /// Case-insensitive matching against the catalog: `/model kigi 4.5`

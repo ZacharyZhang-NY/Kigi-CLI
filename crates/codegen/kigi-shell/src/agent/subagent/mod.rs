@@ -806,6 +806,18 @@ async fn resolve_subagent_sampling_config(
     {
         return resolved;
     }
+    if parent_mid.0.as_ref().starts_with("devin/")
+        && let Some(entry) = ctx.available_models.get(parent_mid.0.as_ref())
+        && entry.info.model == parent_config.model
+        && let Some(pair) = entry.info.fusion.as_ref()
+        && kigi_sampling_types::devin::fusion_model_uids(&parent_config.model)
+            .is_some_and(|(lead, helper)| lead == pair.lead_model && helper == pair.sidekick_model)
+    {
+        let child_key = format!("devin/{}", pair.sidekick_model);
+        if let Some(resolved) = resolve_model_override_to_config(&child_key, ctx) {
+            return resolved;
+        }
+    }
     log_subagent_model_resolution(
         agent_name,
         "inherit_parent",

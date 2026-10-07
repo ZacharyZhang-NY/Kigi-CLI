@@ -7,6 +7,7 @@ pub use self::error::{ResponseModelMetadata, Result, SamplingError};
 pub use self::types::*;
 pub use kigi_sampler::ApiBackend;
 pub use kigi_sampler::SamplingClient as Client;
+pub use kigi_sampling_types::devin;
 
 pub use async_openai::types::responses as rs;
 

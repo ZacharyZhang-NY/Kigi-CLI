@@ -46,6 +46,52 @@ impl EffortTokenError {
     }
 }
 
+pub(crate) fn model_family(
+    info: &acp::ModelInfo,
+) -> Option<kigi_shell::agent::config::ModelFamilyInfo> {
+    if !info.model_id.0.as_ref().starts_with("devin/") {
+        return None;
+    }
+    let value = info.meta.as_ref()?.get("modelFamily")?;
+    let mut family: kigi_shell::agent::config::ModelFamilyInfo =
+        serde_json::from_value(value.clone()).ok()?;
+    family.id = family.id.trim().to_string();
+    family.name = family.name.trim().to_string();
+    (!family.id.is_empty() && !family.name.is_empty()).then_some(family)
+}
+
+pub(crate) fn native_fusion(
+    info: &acp::ModelInfo,
+) -> Option<kigi_shell::agent::config::ModelFusionInfo> {
+    let pair_uid = info.model_id.0.as_ref().strip_prefix("devin/")?;
+    let (lead_uid, helper_uid) = kigi_shell::sampling::devin::fusion_model_uids(pair_uid)?;
+    let value = info.meta.as_ref()?.get("fusion")?;
+    let mut fusion: kigi_shell::agent::config::ModelFusionInfo =
+        serde_json::from_value(value.clone()).ok()?;
+    fusion.lead = fusion.lead.trim().to_string();
+    fusion.sidekick = fusion.sidekick.trim().to_string();
+    fusion.lead_model = fusion.lead_model.trim().to_string();
+    fusion.sidekick_model = fusion.sidekick_model.trim().to_string();
+    (fusion.lead_model == lead_uid
+        && fusion.sidekick_model == helper_uid
+        && !fusion.lead.is_empty()
+        && !fusion.sidekick.is_empty()
+        && !fusion.lead_model.is_empty()
+        && !fusion.sidekick_model.is_empty())
+    .then_some(fusion)
+}
+
+pub(crate) fn model_variant_name<'a>(
+    info: &'a acp::ModelInfo,
+    family: &kigi_shell::agent::config::ModelFamilyInfo,
+) -> &'a str {
+    info.name
+        .strip_prefix(family.name.as_str())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or(info.name.as_str())
+}
+
 /// Per-agent model state.
 #[derive(Debug, Clone, Default)]
 pub struct ModelState {
@@ -284,13 +330,34 @@ impl ModelState {
     /// Resolve a user-supplied name or id to a `ModelId` via case-insensitive
     /// ASCII match against the catalog.
     pub fn resolve_by_name_or_id(&self, query: &str) -> Option<acp::ModelId> {
-        self.available.iter().find_map(|(id, info)| {
+        if let Some(id) = self.available.iter().find_map(|(id, info)| {
             if info.name.eq_ignore_ascii_case(query) || id.0.as_ref().eq_ignore_ascii_case(query) {
                 Some(id.clone())
             } else {
                 None
             }
-        })
+        }) {
+            return Some(id);
+        }
+        let mut first: Option<&acp::ModelId> = None;
+        for (id, info) in &self.available {
+            let Some(f) = model_family(info) else {
+                continue;
+            };
+            let is_hit = f.name.eq_ignore_ascii_case(query)
+                || format!("devin/{}", f.id).eq_ignore_ascii_case(query)
+                || format!("devin/{}", f.name).eq_ignore_ascii_case(query);
+            if !is_hit {
+                continue;
+            }
+            if f.is_default {
+                return Some(id.clone());
+            }
+            if first.is_none() {
+                first = Some(id);
+            }
+        }
+        first.cloned()
     }
 
     pub fn display_name_for(&self, id: &acp::ModelId) -> String {
@@ -672,6 +739,204 @@ mod tests {
         assert!(
             !state_with_meta(Some(serde_json::json!({ "inputModalities": ["text"] })))
                 .current_model_accepts_images()
+        );
+    }
+
+    fn model_with_family(
+        id: &str,
+        name: &str,
+        family_id: &str,
+        family_name: &str,
+        is_default: bool,
+    ) -> acp::ModelInfo {
+        acp::ModelInfo::new(acp::ModelId::new(Arc::from(id)), name.to_string()).meta(
+            serde_json::json!({
+                "modelFamily": {"id": family_id, "name": family_name, "isDefault": is_default},
+            })
+            .as_object()
+            .cloned(),
+        )
+    }
+
+    #[test]
+    fn family_alias_resolves_flagged_default_not_first_member() {
+        let mut state = ModelState::default();
+        for (id, name, default) in [
+            ("devin/swe-2-high", "SWE-2 High", false),
+            ("devin/swe-2-medium", "SWE-2 Medium", true),
+            ("devin/swe-2-max", "SWE-2 Max", false),
+        ] {
+            let mid = acp::ModelId::new(Arc::from(id));
+            state
+                .available
+                .insert(mid, model_with_family(id, name, "swe-2", "SWE-2", default));
+        }
+        for alias in ["SWE-2", "swe-2", "devin/swe-2", "devin/SWE-2"] {
+            assert_eq!(
+                state.resolve_by_name_or_id(alias).map(|m| m.0.to_string()),
+                Some("devin/swe-2-medium".to_string()),
+                "alias {alias} must resolve the flagged default"
+            );
+        }
+    }
+
+    #[test]
+    fn family_alias_falls_back_to_first_member_without_default_flag() {
+        let mut state = ModelState::default();
+        for (id, name) in [("devin/fam-a", "Fam A"), ("devin/fam-b", "Fam B")] {
+            let mid = acp::ModelId::new(Arc::from(id));
+            state
+                .available
+                .insert(mid, model_with_family(id, name, "fam", "Fam", false));
+        }
+        assert_eq!(
+            state.resolve_by_name_or_id("Fam").map(|m| m.0.to_string()),
+            Some("devin/fam-a".to_string()),
+            "no is_default flag → first catalog member"
+        );
+    }
+
+    #[test]
+    fn family_exact_concrete_id_and_full_name_still_win() {
+        let mut state = ModelState::default();
+        for (id, name, default) in [
+            ("devin/swe-2-high", "SWE-2 High", false),
+            ("devin/swe-2-medium", "SWE-2 Medium", true),
+        ] {
+            let mid = acp::ModelId::new(Arc::from(id));
+            state
+                .available
+                .insert(mid, model_with_family(id, name, "swe-2", "SWE-2", default));
+        }
+        assert_eq!(
+            state
+                .resolve_by_name_or_id("devin/swe-2-high")
+                .map(|m| m.0.to_string()),
+            Some("devin/swe-2-high".to_string()),
+            "exact concrete id beats family default"
+        );
+        assert_eq!(
+            state
+                .resolve_by_name_or_id("SWE-2 High")
+                .map(|m| m.0.to_string()),
+            Some("devin/swe-2-high".to_string()),
+            "exact variant display name beats family default"
+        );
+    }
+
+    #[test]
+    fn family_meta_from_foreign_provider_or_blank_fields_is_ignored() {
+        let mut state = ModelState::default();
+        let foreign = acp::ModelId::new(Arc::from("claude-pro-max/opus"));
+        state.available.insert(
+            foreign.clone(),
+            model_with_family("claude-pro-max/opus", "Opus", "swe-2", "SWE-2", true),
+        );
+        let blank = acp::ModelId::new(Arc::from("devin/blank"));
+        state.available.insert(
+            blank.clone(),
+            acp::ModelInfo::new(blank.clone(), "Blank".to_string()).meta(
+                serde_json::json!({"modelFamily": {"id": "", "name": "SWE-2", "isDefault": true}})
+                    .as_object()
+                    .cloned(),
+            ),
+        );
+        let bogus = acp::ModelId::new(Arc::from("devin/bogus"));
+        state.available.insert(
+            bogus.clone(),
+            acp::ModelInfo::new(bogus.clone(), "Bogus".to_string()).meta(
+                serde_json::json!({"modelFamily": "not-an-object"})
+                    .as_object()
+                    .cloned(),
+            ),
+        );
+        assert_eq!(state.resolve_by_name_or_id("SWE-2"), None);
+        assert_eq!(
+            state
+                .resolve_by_name_or_id("claude-pro-max/opus")
+                .map(|m| m.0.to_string()),
+            Some("claude-pro-max/opus".to_string()),
+            "concrete id still resolves even though family meta is ignored"
+        );
+    }
+
+    fn fusion_model(
+        id: &str,
+        name: &str,
+        lead: &str,
+        sidekick: &str,
+        lead_model: &str,
+        sidekick_model: &str,
+    ) -> acp::ModelInfo {
+        let mid = acp::ModelId::new(Arc::from(id));
+        acp::ModelInfo::new(mid, name.to_string()).meta(
+            serde_json::json!({
+                "fusion": {
+                    "lead": lead, "sidekick": sidekick,
+                    "leadModel": lead_model, "sidekickModel": sidekick_model,
+                },
+            })
+            .as_object()
+            .cloned(),
+        )
+    }
+
+    #[test]
+    fn native_fusion_parses_only_complete_devin_meta() {
+        let model = fusion_model(
+            "devin/fusion-a-sidekick-b",
+            "Fusion (A + B)",
+            "A",
+            "B",
+            "a",
+            "b",
+        );
+        let pair = native_fusion(&model).expect("native fusion parsed");
+        assert_eq!(pair.lead_model, "a");
+        assert_eq!(pair.sidekick_model, "b");
+
+        let foreign = fusion_model("fusion-a-b", "Fusion (A + B)", "A", "B", "a", "b");
+        assert!(
+            native_fusion(&foreign).is_none(),
+            "non-devin id is never native fusion"
+        );
+
+        let mut incomplete = model.clone();
+        incomplete.meta = serde_json::json!({"fusion": {"lead": "A", "sidekick": "B"}})
+            .as_object()
+            .cloned();
+        assert!(
+            native_fusion(&incomplete).is_none(),
+            "missing leadModel → None"
+        );
+
+        let mut blank = model.clone();
+        blank.meta = serde_json::json!({
+            "fusion": {"lead": " ", "sidekick": "B", "leadModel": "a", "sidekickModel": "b"}
+        })
+        .as_object()
+        .cloned();
+        assert!(native_fusion(&blank).is_none(), "blank lead → None");
+
+        let mut mismatched = model.clone();
+        mismatched.meta = serde_json::json!({
+            "fusion": {
+                "lead": "A", "sidekick": "B",
+                "leadModel": "zzz", "sidekickModel": "b",
+            }
+        })
+        .as_object()
+        .cloned();
+        assert!(
+            native_fusion(&mismatched).is_none(),
+            "DTO disagreeing with the pair uid is ignored"
+        );
+
+        let mut forged = model.clone();
+        forged.model_id = acp::ModelId::new(Arc::from("devin/plain-model"));
+        assert!(
+            native_fusion(&forged).is_none(),
+            "ordinary devin uid carrying forged fusion meta is ignored"
         );
     }
 }

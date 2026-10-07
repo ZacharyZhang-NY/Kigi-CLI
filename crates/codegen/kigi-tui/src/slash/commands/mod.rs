@@ -23,6 +23,7 @@ pub mod export;
 pub mod feedback;
 pub mod find;
 pub mod fork;
+pub mod fusion;
 pub mod gboom;
 pub mod help;
 pub mod history;
@@ -84,6 +85,7 @@ pub fn builtin_commands() -> Vec<Arc<dyn SlashCommand>> {
         Arc::new(screen_mode_switch::ScreenModeSwitchCommand::minimal()),
         Arc::new(screen_mode_switch::ScreenModeSwitchCommand::fullscreen()),
         Arc::new(model::ModelCommand),
+        Arc::new(fusion::FusionCommand),
         Arc::new(effort::EffortCommand),
         Arc::new(always_approve::AlwaysApproveCommand),
         Arc::new(auto::AutoCommand),

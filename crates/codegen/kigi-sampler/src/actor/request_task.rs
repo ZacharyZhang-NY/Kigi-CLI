@@ -447,7 +447,7 @@ async fn run_one_attempt(
             let l2 = stream_responses(teed, metadata, request_id.clone(), idle_timeout, doom_loop);
             drive_l2(l2, request_id, event_tx, cancel_token, captured, doom_check).await
         }
-        ApiBackend::Messages => {
+        ApiBackend::Messages | ApiBackend::Devin => {
             let (raw, metadata) = match client.conversation_stream_messages(request).await {
                 Ok(pair) => pair,
                 Err(e) => return AttemptOutcome::InitFailed { error: e },

@@ -3023,3 +3023,247 @@ async fn progress_publisher_delivers_ticks_to_parent_cmd_channel() {
         })
         .await;
 }
+
+fn devin_model_entry(bare_uid: &str) -> crate::agent::config::ModelEntry {
+    let mut entry = test_model_entry(bare_uid);
+    entry.info.id = Some(format!("devin/{bare_uid}"));
+    entry.info.api_backend = kigi_sampling_types::ApiBackend::Devin;
+    entry.info.base_url = kigi_models::PlatformId::Devin.base_url().to_string();
+    entry.api_key = Some("FUSION_ROUTE_FAKE_ONLY".to_string());
+    entry
+}
+
+fn devin_fusion_entry(pair_uid: &str, helper_uid: &str) -> crate::agent::config::ModelEntry {
+    let mut entry = devin_model_entry(pair_uid);
+    let (lead_model, _) =
+        kigi_sampling_types::devin::fusion_model_uids(pair_uid).expect("valid pair uid");
+    entry.info.fusion = Some(kigi_models::ModelFusionInfo {
+        lead: "Lead".to_string(),
+        sidekick: "Helper".to_string(),
+        lead_model: lead_model.to_string(),
+        sidekick_model: helper_uid.to_string(),
+    });
+    entry
+}
+
+fn devin_fusion_catalog() -> indexmap::IndexMap<String, crate::agent::config::ModelEntry> {
+    let mut models = indexmap::IndexMap::new();
+    models.insert(
+        "devin/fusion-l1-sidekick-h1".to_string(),
+        devin_fusion_entry("fusion-l1-sidekick-h1", "h1"),
+    );
+    models.insert("devin/h1".to_string(), devin_model_entry("h1"));
+    models.insert(
+        "devin/fusion-l2-sidekick-h2".to_string(),
+        devin_fusion_entry("fusion-l2-sidekick-h2", "h2"),
+    );
+    models.insert("devin/h2".to_string(), devin_model_entry("h2"));
+    models
+}
+
+#[tokio::test]
+async fn fusion_parent_routes_unpinned_subagent_to_paired_helper() {
+    use kigi_agent::config::ModelOverride;
+    let ctx = ctx_with_parent_chat_state(
+        "devin/fusion-l1-sidekick-h1",
+        "fusion-l1-sidekick-h1",
+        "devin/fusion-l2-sidekick-h2",
+        devin_fusion_catalog(),
+    );
+    let (config, model_id) = resolve_subagent_sampling_config(
+        "explore",
+        &ModelOverride::Inherit,
+        &ctx,
+    )
+    .await;
+    assert_eq!(config.model, "h1", "parent pair helper wins over global model");
+    assert_eq!(model_id.0.as_ref(), "devin/h1");
+    assert_eq!(config.api_backend, kigi_sampling_types::ApiBackend::Devin);
+    assert_eq!(config.base_url, kigi_models::PlatformId::Devin.base_url());
+    assert_eq!(
+        config.api_key.as_deref(),
+        Some("FUSION_ROUTE_FAKE_ONLY"),
+        "helper row's own fake credential, never the parent's"
+    );
+}
+
+#[tokio::test]
+async fn fusion_parent_helper_missing_falls_back_to_inherit() {
+    use kigi_agent::config::ModelOverride;
+    let mut models = indexmap::IndexMap::new();
+    models.insert(
+        "devin/fusion-l1-sidekick-ghost".to_string(),
+        devin_fusion_entry("fusion-l1-sidekick-ghost", "ghost"),
+    );
+    let ctx = ctx_with_parent_chat_state(
+        "devin/fusion-l1-sidekick-ghost",
+        "fusion-l1-sidekick-ghost",
+        "other",
+        models,
+    );
+    let (config, _) = resolve_subagent_sampling_config(
+        "explore",
+        &ModelOverride::Inherit,
+        &ctx,
+    )
+    .await;
+    assert_eq!(config.model, "fusion-l1-sidekick-ghost", "inherits parent slug");
+}
+
+#[tokio::test]
+async fn fusion_parent_stale_slug_guard_blocks_helper_routing() {
+    use kigi_agent::config::ModelOverride;
+    let mut models = indexmap::IndexMap::new();
+    let mut entry = devin_fusion_entry("fusion-l1-sidekick-h1", "h1");
+    entry.info.model = "stale-other-slug".to_string();
+    models.insert("devin/fusion-l1-sidekick-h1".to_string(), entry);
+    models.insert("devin/h1".to_string(), test_model_entry("h1"));
+    let ctx = ctx_with_parent_chat_state(
+        "devin/fusion-l1-sidekick-h1",
+        "fusion-l1-sidekick-h1",
+        "other",
+        models,
+    );
+    let (config, _) = resolve_subagent_sampling_config(
+        "explore",
+        &ModelOverride::Inherit,
+        &ctx,
+    )
+    .await;
+    assert_eq!(
+        config.model, "fusion-l1-sidekick-h1",
+        "live parent slug differs from the catalog row -> plain inherit"
+    );
+}
+
+#[tokio::test]
+async fn fusion_parent_pins_and_overrides_still_win() {
+    use kigi_agent::config::ModelOverride;
+    let mut models = devin_fusion_catalog();
+    models.insert("pinned-x".to_string(), test_model_entry("pinned-x"));
+    let mut ctx = ctx_with_parent_chat_state(
+        "devin/fusion-l1-sidekick-h1",
+        "fusion-l1-sidekick-h1",
+        "other",
+        models,
+    );
+    ctx.subagent_model_overrides
+        .insert("explore".to_string(), "pinned-x".to_string());
+    let (config, model_id) = resolve_subagent_sampling_config(
+        "explore",
+        &ModelOverride::Inherit,
+        &ctx,
+    )
+    .await;
+    assert_eq!((config.model.as_str(), model_id.0.as_ref()), ("pinned-x", "pinned-x"));
+
+    let mut ctx = ctx_with_parent_chat_state(
+        "devin/fusion-l1-sidekick-h1",
+        "fusion-l1-sidekick-h1",
+        "other",
+        devin_fusion_catalog(),
+    );
+    ctx.available_models
+        .insert("agentdef-y".to_string(), test_model_entry("agentdef-y"));
+    let (config, model_id) = resolve_subagent_sampling_config(
+        "explore",
+        &ModelOverride::Override("agentdef-y".to_string()),
+        &ctx,
+    )
+    .await;
+    assert_eq!((config.model.as_str(), model_id.0.as_ref()), ("agentdef-y", "agentdef-y"));
+
+    let ctx = ctx_with_parent_chat_state(
+        "devin/fusion-l1-sidekick-h1",
+        "fusion-l1-sidekick-h1",
+        "other",
+        devin_fusion_catalog(),
+    );
+    let (config, model_id) = resolve_effective_model_config(
+        Some("devin/h2"),
+        "explore",
+        &ModelOverride::Inherit,
+        &ctx,
+    )
+    .await;
+    assert_eq!((config.model.as_str(), model_id.0.as_ref()), ("h2", "devin/h2"));
+}
+
+#[tokio::test]
+async fn fusion_meta_ignored_for_non_devin_parent() {
+    use kigi_agent::config::ModelOverride;
+    let mut models = indexmap::IndexMap::new();
+    let mut forged = test_model_entry("kimi-4.5");
+    forged.info.fusion = Some(kigi_models::ModelFusionInfo {
+        lead: "L".to_string(),
+        sidekick: "H".to_string(),
+        lead_model: "l".to_string(),
+        sidekick_model: "h1".to_string(),
+    });
+    models.insert("kimi-4.5".to_string(), forged);
+    models.insert("devin/h1".to_string(), devin_model_entry("h1"));
+    let ctx = ctx_with_parent_chat_state("kimi-4.5", "kimi-4.5", "other", models);
+    let (config, model_id) = resolve_subagent_sampling_config(
+        "explore",
+        &ModelOverride::Inherit,
+        &ctx,
+    )
+    .await;
+    assert_eq!((config.model.as_str(), model_id.0.as_ref()), ("kimi-4.5", "kimi-4.5"));
+}
+
+#[tokio::test]
+async fn fusion_fork_context_explicit_parent_pin_stays_on_pair() {
+    use kigi_agent::config::ModelOverride;
+    let ctx = ctx_with_parent_chat_state(
+        "devin/fusion-l1-sidekick-h1",
+        "fusion-l1-sidekick-h1",
+        "other",
+        devin_fusion_catalog(),
+    );
+    let (config, model_id) = resolve_effective_model_config(
+        Some("devin/fusion-l1-sidekick-h1"),
+        "explore",
+        &ModelOverride::Inherit,
+        &ctx,
+    )
+    .await;
+    assert_eq!(
+        (config.model.as_str(), model_id.0.as_ref()),
+        ("fusion-l1-sidekick-h1", "devin/fusion-l1-sidekick-h1"),
+        "explicit parent-model pin resolves the pair itself"
+    );
+}
+
+#[tokio::test]
+async fn fusion_pair_dto_mismatch_blocks_helper_routing() {
+    use kigi_agent::config::ModelOverride;
+    let mut models = indexmap::IndexMap::new();
+    let mut entry = devin_model_entry("fusion-l1-sidekick-h1");
+    entry.info.fusion = Some(kigi_models::ModelFusionInfo {
+        lead: "Lead".to_string(),
+        sidekick: "Helper".to_string(),
+        lead_model: "l1".to_string(),
+        sidekick_model: "h2".to_string(),
+    });
+    models.insert("devin/fusion-l1-sidekick-h1".to_string(), entry);
+    models.insert("devin/h1".to_string(), devin_model_entry("h1"));
+    models.insert("devin/h2".to_string(), devin_model_entry("h2"));
+    let ctx = ctx_with_parent_chat_state(
+        "devin/fusion-l1-sidekick-h1",
+        "fusion-l1-sidekick-h1",
+        "other",
+        models,
+    );
+    let (config, model_id) = resolve_subagent_sampling_config(
+        "explore",
+        &ModelOverride::Inherit,
+        &ctx,
+    )
+    .await;
+    assert_eq!(
+        (config.model.as_str(), model_id.0.as_ref()),
+        ("fusion-l1-sidekick-h1", "devin/fusion-l1-sidekick-h1"),
+        "DTO disagreeing with the pair uid must not route to any helper"
+    );
+}

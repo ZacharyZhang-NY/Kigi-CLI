@@ -12,6 +12,7 @@ pub mod attribution;
 pub mod client;
 pub mod commands;
 pub mod config;
+mod devin;
 pub mod doom_loop;
 pub mod events;
 pub mod handle;

@@ -8,7 +8,9 @@ description = "Pure data types for the xAI sampling / chat-completion API layer"
 [dependencies]
 async-openai = { workspace = true }
 base64 = { workspace = true }
+flate2 = { workspace = true }
 indexmap = { workspace = true, features = ["serde"] }
+prost = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["preserve_order"] }

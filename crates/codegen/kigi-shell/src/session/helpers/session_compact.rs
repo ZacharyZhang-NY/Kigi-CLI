@@ -599,9 +599,15 @@ pub(crate) async fn generate_session_compact(
                 itl_max_ms: timing.itl_max_ms(),
             }
         }
-        ApiBackend::Messages => {
+        ApiBackend::Messages | ApiBackend::Devin => {
             let request = ConversationRequest {
                 items: chat_history,
+                tool_choice: if matches!(sampling_config.api_backend, ApiBackend::Devin) {
+                    (!tools.is_empty() || !hosted_tools.is_empty())
+                        .then_some(conversation_tool_choice)
+                } else {
+                    None
+                },
                 tools,
                 hosted_tools,
                 model: Some(sampling_config.model.to_owned()),

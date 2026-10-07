@@ -12,8 +12,8 @@ adversarially verified, and merged back, end to end.</p>
 writes the patch, runs the tests, and keeps going while you do something else.
 Full-screen, headless in CI with `-p`, or docked in your editor over ACP.
 
-**Already paying for Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot, or
-Grok? Sign in and use it.** No API key, no second bill. Rather bring your own
+**Already paying for Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot,
+Grok, or Devin? Sign in and use it.** No API key, no second bill. Rather bring your own
 key? OpenAI, Anthropic, Google, DeepSeek, Groq, Moonshot and
 [two dozen more](#providers-and-api-keys) are wired in.
 
@@ -86,7 +86,7 @@ On by default. `KIGI_GRAPH=0` turns it off; `KIGI_GRAPH_CONCURRENCY` (default
 
 ## Providers and API keys
 
-29 platforms ship compiled in: 5 you sign into, 24 you hand a key. Anything
+30 platforms ship compiled in: 6 you sign into, 24 you hand a key. Anything
 else is an endpoint you declare yourself ([your own endpoint](#your-own-endpoint)).
 
 **Sign in with a subscription you already pay for.** Run `kigi login` and pick.
@@ -100,10 +100,39 @@ credentials are never sent to another.
 | `openai-codex`   | ChatGPT Plus/Pro (Codex)  | Subscription OAuth (browser, PKCE)          |
 | `github-copilot` | GitHub Copilot            | Subscription OAuth (device code)            |
 | `xai-grok`       | xAI Grok                  | Subscription OAuth (device code)            |
+| `devin`          | Devin                     | Subscription OAuth (browser, PKCE)          |
 
 You get whatever models your plan actually serves — the list is fetched at
 sign-in, not hardcoded. (ChatGPT/Codex is the exception: its backend publishes
 no model endpoint, so those four are compiled in.)
+
+**Devin.** Sign in through the built-in Kigi agent's `/login` provider
+picker → **Devin (subscription)**, which opens the browser once; the
+session token lives under `oauth/devin` and drives Devin's own model
+catalog. (The standalone `kigi login` command remains Kimi Code sign-in.)
+Devin serves *model families* — a named family (e.g. `SWE-2`) with several
+selectable variants — so `/model` shows one row per family and Enter opens
+its variant list, where each row inserts the exact `devin/<uid>` catalog
+id. A bare family name (`/model SWE-2`, `/model devin/swe-2`) selects the
+provider-flagged default variant; every concrete id —
+`/model devin/<catalog-uid>` — and each variant's full display name still
+work directly. Kigi runs the agent — tools, sessions, graph, and swarm
+stay local; Devin serves inference only.
+
+**Fusion.** Devin's catalog also advertises `fusion-…` router rows
+(`Fusion (<lead> + <sidekick>)`). `/fusion` lists one row per lead; Enter
+opens that lead's sidekick list and each row inserts the concrete
+`devin/fusion-…` pair id (also accepted directly via `/model
+devin/fusion-…`). Selecting a pair resolves the lead once per request via
+Devin's `AssignModel`, then chats on the returned uid with the returned
+assignment JWT — the router uid itself is never sent as a chat model.
+Delegation is Kigi-local: an unpinned subagent spawned under a fusion
+parent inherits the pair's configured sidekick model (explicit per-agent
+pins, agent `model:` overrides, runtime/persona pins, and `fork_context`
+all still win). This is Kigi's own implementation — it does not reproduce
+the Devin CLI's helper prompts or loop, and helper-side inference under a
+fusion parent is not verified to match Devin CLI Fusion behavior or
+pricing — treat it as ordinary inference on the configured helper model.
 
 **API-key providers.** Export the env var, or drop the key in
 `~/.kigi/config.toml`. Keys are never logged.

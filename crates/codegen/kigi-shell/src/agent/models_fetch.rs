@@ -113,7 +113,19 @@ pub(crate) fn models_fetch_origin(
         crate::agent::models::ModelFetchAuth::Platforms => {
             let parts: Vec<String> = enabled_platforms(has_oauth, oauth_tokens, platform_keys)
                 .into_iter()
-                .map(|p| format!("{}={}", p.as_str(), platform_models_url(p, endpoints)))
+                .map(|p| {
+                    let marker = if p == kigi_models::PlatformId::Devin {
+                        "#model-families-fusion-v3"
+                    } else {
+                        ""
+                    };
+                    format!(
+                        "{}={}{}",
+                        p.as_str(),
+                        platform_models_url(p, endpoints),
+                        marker
+                    )
+                })
                 .chain(
                     platform_keys
                         .custom()
@@ -404,6 +416,14 @@ fn fetch_one_platform_models(
             .collect();
         return Ok((models, None));
     }
+    if platform.listing() == kigi_models::ListingDialect::Devin {
+        let base_url = platform_fetch_base(platform, endpoints);
+        let models = crate::agent::devin_models::fetch_devin_models(platform, bearer)?
+            .into_iter()
+            .map(|wire| platform_wire_model_to_entry(platform, wire, &base_url))
+            .collect();
+        return Ok((models, None));
+    }
     let client = crate::http::shared_blocking_client();
     let url = match platform.listing() {
         kigi_models::ListingDialect::OpenAi => platform_models_url(platform, endpoints),
@@ -412,6 +432,7 @@ fn fetch_one_platform_models(
         kigi_models::ListingDialect::Anthropic => {
             format!("{}?limit=1000", platform_models_url(platform, endpoints))
         }
+        kigi_models::ListingDialect::Devin => unreachable!(),
     };
     tracing::info!(platform = platform.as_str(), url = %url, "fetching platform models");
     let request = match platform.key_header() {
@@ -504,6 +525,7 @@ fn fetch_one_platform_models(
                 }
             })?
         }
+        kigi_models::ListingDialect::Devin => unreachable!(),
     };
     // Canonicalize listing ids before filtering/enrichment/keying. Google's
     // OpenAI-compat `/models` returns `models/`-prefixed ids while its chat
@@ -691,6 +713,7 @@ pub(crate) fn wire_model_to_entry(
         }
         kigi_models::PlatformWireApi::Responses => crate::sampling::ApiBackend::Responses,
         kigi_models::PlatformWireApi::Messages => crate::sampling::ApiBackend::Messages,
+        kigi_models::PlatformWireApi::Devin => crate::sampling::ApiBackend::Devin,
     };
     let auth_scheme = match key_header {
         kigi_models::PlatformKeyHeader::Bearer => None,
@@ -738,6 +761,8 @@ pub(crate) fn wire_model_to_entry(
         show_model_fingerprint: false,
         stream_tool_calls: None,
         laziness_detector: Default::default(),
+        model_family: wire.model_family,
+        fusion: wire.fusion,
     }
 }
 /// Parse a single model entry from the /models response.
@@ -900,6 +925,8 @@ pub fn parse_remote_model_value(
                 }
             })
             .unwrap_or_default(),
+            model_family: None,
+            fusion: None,
     })
 }
 fn get_string(obj: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<String> {
@@ -3850,6 +3877,28 @@ mod tests {
         assert_eq!(stubs[&kigi_models::PlatformId::ClaudeProMax], "");
     }
 
+    #[test]
+    fn stored_oauth_platforms_devin_only_user() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let mut store = std::collections::BTreeMap::new();
+        store.insert(
+            "oauth/devin".to_string(),
+            crate::auth::KimiAuth::test_default(),
+        );
+        std::fs::write(
+            home.path().join("auth.json"),
+            serde_json::to_string(&store).expect("serialize store"),
+        )
+        .expect("write auth.json");
+        assert_eq!(
+            stored_oauth_platforms(home.path()),
+            vec![kigi_models::PlatformId::Devin],
+        );
+        let stubs = stored_oauth_token_stubs(home.path());
+        assert_eq!(stubs.len(), 1);
+        assert_eq!(stubs[&kigi_models::PlatformId::Devin], "");
+    }
+
     /// The origin computed from presence-only stubs equals the origin the
     /// fetch path computes from REAL resolved tokens — the whole point of
     /// the stubs (a claude-inclusive cached catalog must load at startup).
@@ -3884,6 +3933,152 @@ mod tests {
         assert!(
             !with_real.contains("live-bearer"),
             "origin never embeds tokens"
+        );
+    }
+
+    #[test]
+    fn devin_origin_carries_family_schema_marker() {
+        use crate::agent::config::EndpointsConfig;
+        use crate::agent::models::{ModelFetchAuth, PlatformApiKeys};
+        let cfg = EndpointsConfig::default();
+        let mut tokens = OAuthSessionTokens::new();
+        tokens.insert(kigi_models::PlatformId::Devin, "tok".to_string());
+        tokens.insert(kigi_models::PlatformId::ClaudeProMax, "other".to_string());
+        let origin = models_fetch_origin(
+            &cfg,
+            ModelFetchAuth::Platforms,
+            false,
+            &tokens,
+            &PlatformApiKeys::default(),
+        );
+        let inner = origin
+            .strip_prefix("platforms[")
+            .and_then(|s| s.strip_suffix(']'))
+            .expect("platforms[...] envelope");
+        let devin_part = inner
+            .split(';')
+            .find(|p| p.starts_with("devin="))
+            .expect("devin component");
+        assert_eq!(
+            devin_part,
+            format!(
+                "devin={}#model-families-fusion-v3",
+                platform_models_url(kigi_models::PlatformId::Devin, &cfg)
+            )
+            .as_str(),
+            "devin origin carries the family schema marker: {origin}"
+        );
+        let claude_part = inner
+            .split(';')
+            .find(|p| p.starts_with("claude-pro-max="))
+            .expect("claude component");
+        assert_eq!(
+            claude_part,
+            format!(
+                "claude-pro-max={}",
+                platform_models_url(kigi_models::PlatformId::ClaudeProMax, &cfg)
+            )
+            .as_str(),
+            "non-devin origin component byte-identical: {origin}"
+        );
+    }
+
+    #[test]
+    fn devin_family_survives_wire_entry_info_and_acp_meta() {
+        let wire = kigi_models::WireModel {
+            id: "MODEL_SW_MED".to_string(),
+            display_name: Some("SWE-2 Medium".to_string()),
+            model_family: Some(kigi_models::ModelFamilyInfo {
+                id: "swe-2".to_string(),
+                name: "SWE-2".to_string(),
+                is_default: true,
+            }),
+            ..kigi_models::WireModel::bare("x".to_string())
+        };
+        let entry = platform_wire_model_to_entry(
+            kigi_models::PlatformId::Devin,
+            wire,
+            "https://server.codeium.com",
+        );
+        assert_eq!(
+            entry.id.as_deref(),
+            Some("devin/MODEL_SW_MED"),
+            "managed devin key"
+        );
+        let fam = entry.model_family.clone().expect("family on entry");
+        assert_eq!(fam.id, "swe-2");
+        assert!(fam.is_default);
+
+        let model_entry = crate::agent::config::ModelEntry::from_config_entry(&entry);
+        assert_eq!(
+            model_entry
+                .info
+                .model_family
+                .as_ref()
+                .map(|f| f.id.as_str()),
+            Some("swe-2"),
+            "ModelInfo carries the family"
+        );
+        let mut models = IndexMap::new();
+        models.insert(entry.id.clone().unwrap(), model_entry);
+        let meta = crate::agent::config::to_acp_model_info(&models)
+            .values()
+            .next()
+            .unwrap()
+            .meta
+            .clone()
+            .expect("meta present");
+        assert_eq!(
+            meta["modelFamily"],
+            serde_json::json!({"id": "swe-2", "name": "SWE-2", "isDefault": true})
+        );
+    }
+
+    #[test]
+    fn devin_fusion_survives_wire_entry_info_and_acp_meta() {
+        let wire = kigi_models::WireModel {
+            id: "fusion-lead-uid-sidekick-helper-uid".to_string(),
+            display_name: Some("Fusion (Lead + Helper)".to_string()),
+            fusion: Some(kigi_models::ModelFusionInfo {
+                lead: "Lead".to_string(),
+                sidekick: "Helper".to_string(),
+                lead_model: "lead-uid".to_string(),
+                sidekick_model: "helper-uid".to_string(),
+            }),
+            ..kigi_models::WireModel::bare("x".to_string())
+        };
+        let entry = platform_wire_model_to_entry(
+            kigi_models::PlatformId::Devin,
+            wire,
+            "https://server.codeium.com",
+        );
+        let pair = entry.fusion.clone().expect("fusion on entry");
+        assert_eq!(pair.sidekick_model, "helper-uid");
+
+        let model_entry = crate::agent::config::ModelEntry::from_config_entry(&entry);
+        assert_eq!(
+            model_entry
+                .info
+                .fusion
+                .as_ref()
+                .map(|f| f.lead_model.as_str()),
+            Some("lead-uid"),
+        );
+        let mut models = IndexMap::new();
+        models.insert(entry.id.clone().unwrap(), model_entry);
+        let meta = crate::agent::config::to_acp_model_info(&models)
+            .values()
+            .next()
+            .unwrap()
+            .meta
+            .clone()
+            .expect("meta present");
+        assert_eq!(
+            meta["fusion"],
+            serde_json::json!({
+                "lead": "Lead", "sidekick": "Helper",
+                "leadModel": "lead-uid", "sidekickModel": "helper-uid"
+            })
         );
     }
 }

@@ -1443,6 +1443,7 @@ pub enum ApiBackend {
     Responses,
     /// Use the Anthropic Messages API (/v1/messages)
     Messages,
+    Devin,
 }
 
 impl ApiBackend {

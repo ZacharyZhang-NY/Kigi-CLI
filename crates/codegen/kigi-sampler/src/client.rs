@@ -213,7 +213,7 @@ fn record_stream_request_failure(err: &reqwest::Error) {
     span.record("error", err.to_string().as_str());
 }
 
-fn extract_retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+pub(crate) fn extract_retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
     headers
         .get(reqwest::header::RETRY_AFTER)
         .and_then(|v| v.to_str().ok())
@@ -678,6 +678,37 @@ impl SamplingClient {
             })
     }
 
+    pub(crate) fn devin_bearer(&self) -> Option<String> {
+        if let Some(resolver) = &self.bearer_resolver
+            && let Some(fresh) = resolver.current_bearer()
+            && !fresh.is_empty()
+        {
+            return Some(fresh);
+        }
+        match self.defaults.auth_scheme {
+            AuthScheme::XApiKey => self
+                .default_headers
+                .get(HeaderName::from_static("x-api-key"))
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string()),
+            AuthScheme::Bearer => self
+                .default_headers
+                .get(AUTHORIZATION)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.strip_prefix("Bearer "))
+                .map(|s| s.to_string()),
+        }
+        .filter(|s| !s.is_empty())
+    }
+
+    pub(crate) fn devin_base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    pub(crate) fn devin_default_model(&self) -> &str {
+        &self.defaults.model
+    }
+
     /// Extract the bearer from `default_headers`, truncated to prefix length.
     /// Reads `x-api-key` (Anthropic Messages API) or `Authorization` (OpenAI-completions).
     fn extract_sent_bearer(&self) -> Option<String> {
@@ -722,6 +753,20 @@ impl SamplingClient {
         if let Some(cb) = self.attribution_callback.as_ref() {
             let sent_prefix = self.current_sent_bearer_prefix();
             cb.record_401(consumer, sent_prefix.as_deref());
+        }
+    }
+
+    pub(crate) fn record_401_attribution_for_token(
+        &self,
+        consumer: crate::attribution::SamplingConsumer,
+        token: &str,
+    ) {
+        if let Some(cb) = self.attribution_callback.as_ref() {
+            let prefix: String = token
+                .chars()
+                .take(crate::attribution::SENT_BEARER_PREFIX_LEN)
+                .collect();
+            cb.record_401(consumer, Some(prefix.as_str()));
         }
     }
 
@@ -1811,6 +1856,12 @@ impl SamplingClient {
         Option<ResponseModelMetadata>,
     )> {
         self.apply_conversation_defaults(&mut request)?;
+        if self.api_backend() == ApiBackend::Devin {
+            return Err(SamplingError::InvalidConfiguration(
+                "ApiBackend::Devin must be dispatched by api_backend — the Devin \
+                 wire never reaches the Chat Completions endpoint",
+            ));
+        }
 
         let trace = request.trace.take();
         let mut chat_request: ChatCompletionRequest = request.into();
@@ -1829,6 +1880,12 @@ impl SamplingClient {
         mut request: ConversationRequest,
     ) -> Result<ChatCompletionResponse> {
         self.apply_conversation_defaults(&mut request)?;
+        if self.api_backend() == ApiBackend::Devin {
+            return Err(SamplingError::InvalidConfiguration(
+                "ApiBackend::Devin must be dispatched by api_backend — the Devin \
+                 wire never reaches the Chat Completions endpoint",
+            ));
+        }
 
         let trace = request.trace.take();
         let mut chat_request: ChatCompletionRequest = request.into();
@@ -1855,6 +1912,12 @@ impl SamplingClient {
         Option<crate::doom_loop::DoomLoopSignalCollector>,
     )> {
         self.apply_conversation_defaults(&mut request)?;
+        if self.api_backend() == ApiBackend::Devin {
+            return Err(SamplingError::InvalidConfiguration(
+                "ApiBackend::Devin must be dispatched by api_backend — the Devin \
+                 wire never reaches the Responses endpoint",
+            ));
+        }
 
         let trace = request.trace.take();
         let x_kigi_conv_id = request.x_kigi_conv_id.clone();
@@ -1893,6 +1956,12 @@ impl SamplingClient {
         mut request: ConversationRequest,
     ) -> Result<rs::Response> {
         self.apply_conversation_defaults(&mut request)?;
+        if self.api_backend() == ApiBackend::Devin {
+            return Err(SamplingError::InvalidConfiguration(
+                "ApiBackend::Devin must be dispatched by api_backend — the Devin \
+                 wire never reaches the Responses endpoint",
+            ));
+        }
 
         let trace = request.trace.take();
         let x_kigi_conv_id = request.x_kigi_conv_id.clone();
@@ -1930,6 +1999,10 @@ impl SamplingClient {
     )> {
         self.apply_conversation_defaults(&mut request)?;
 
+        if self.api_backend() == ApiBackend::Devin {
+            return self.conversation_stream_devin(request).await;
+        }
+
         let trace = request.trace.take();
         let x_kigi_conv_id = request.x_kigi_conv_id.clone();
         let x_kigi_req_id = request.x_kigi_req_id.clone();
@@ -1961,6 +2034,12 @@ impl SamplingClient {
         mut request: ConversationRequest,
     ) -> Result<messages::MessagesResponse> {
         self.apply_conversation_defaults(&mut request)?;
+        if self.api_backend() == ApiBackend::Devin {
+            return Err(SamplingError::InvalidConfiguration(
+                "ApiBackend::Devin has no non-streaming Messages path — the Devin \
+                 wire is streaming-only; use conversation_collect",
+            ));
+        }
 
         let trace = request.trace.take();
         let x_kigi_conv_id = request.x_kigi_conv_id.clone();
@@ -2005,7 +2084,7 @@ impl SamplingClient {
                     crate::stream::stream_responses(raw, meta, request_id, idle_timeout, doom_loop);
                 crate::stream::collect_response(events).await
             }
-            ApiBackend::Messages => {
+            ApiBackend::Messages | ApiBackend::Devin => {
                 let (raw, meta) = self.conversation_stream_messages(request).await?;
                 let events = crate::stream::stream_messages(raw, meta, request_id, idle_timeout);
                 crate::stream::collect_response(events).await

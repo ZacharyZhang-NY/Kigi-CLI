@@ -1354,6 +1354,7 @@ fn resolve_subagent_permission_mode(
 pub use kigi_agent::config::AgentDefinition;
 pub use kigi_agent::config::Effort;
 pub use kigi_agent::config::PermissionMode;
+pub use kigi_models::{ModelFamilyInfo, ModelFusionInfo};
 pub use kigi_shared::ui_config::{ContextualHints, UiConfig};
 /// Configuration for selecting the agent definition.
 ///
@@ -2993,6 +2994,8 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
                 show_model_fingerprint: m.show_model_fingerprint,
                 stream_tool_calls: None,
                 laziness_detector: LazinessDetectorPerModelConfig::default(),
+                model_family: None,
+                fusion: None,
             };
             (key, config)
         })
@@ -3013,6 +3016,10 @@ pub struct ModelEntryConfig {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_family: Option<kigi_models::ModelFamilyInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fusion: Option<kigi_models::ModelFusionInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_completion_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3302,6 +3309,10 @@ pub struct ModelInfo {
     /// to users in either consumer.
     pub name: Option<String>,
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_family: Option<kigi_models::ModelFamilyInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fusion: Option<kigi_models::ModelFusionInfo>,
     pub max_completion_tokens: Option<u32>,
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
@@ -3397,6 +3408,8 @@ impl ModelInfo {
             show_model_fingerprint: false,
             stream_tool_calls: None,
             laziness_detector: LazinessDetectorPerModelConfig::default(),
+            model_family: None,
+            fusion: None,
         }
     }
     /// Extract shared model metadata from a flat config entry.
@@ -3433,6 +3446,8 @@ impl ModelInfo {
             show_model_fingerprint: entry.show_model_fingerprint,
             stream_tool_calls: entry.stream_tool_calls,
             laziness_detector: entry.laziness_detector.clone(),
+            model_family: entry.model_family.clone(),
+            fusion: entry.fusion.clone(),
         }
     }
     /// Derive the legacy effort gate/default from `reasoning_efforts` so the
@@ -4083,6 +4098,8 @@ pub(crate) fn resolve_aux_model_sampling_config(
                 show_model_fingerprint: false,
                 stream_tool_calls: None,
                 laziness_detector: LazinessDetectorPerModelConfig::default(),
+                model_family: None,
+                fusion: None,
             },
             api_key: Some(bearer),
             env_key: None,
@@ -4357,6 +4374,12 @@ pub fn to_acp_model_info(
                         REASONING_EFFORTS_META_KEY.to_string(),
                         reasoning_efforts_meta_value(&info.reasoning_efforts),
                     );
+                }
+                if let Some(family) = &info.model_family {
+                    map.insert("modelFamily".to_string(), serde_json::json!(family));
+                }
+                if let Some(fusion) = &info.fusion {
+                    map.insert("fusion".to_string(), serde_json::json!(fusion));
                 }
                 if map.is_empty() { None } else { Some(map) }
             };
@@ -4932,6 +4955,8 @@ reasoning_effort = "low"
                 show_model_fingerprint: false,
                 stream_tool_calls: None,
                 laziness_detector: LazinessDetectorPerModelConfig::default(),
+                model_family: None,
+                fusion: None,
             },
             api_key: api_key.map(|s| s.to_string()),
             env_key: env_key.map(EnvKeys::single),
@@ -5871,6 +5896,8 @@ reasoning_effort = "low"
             show_model_fingerprint: false,
             stream_tool_calls: None,
             laziness_detector: LazinessDetectorPerModelConfig::default(),
+            model_family: None,
+            fusion: None,
         };
         let info = ModelInfo::from_config(&entry);
         assert!(info.use_concise);
@@ -6031,6 +6058,8 @@ reasoning_effort = "low"
             show_model_fingerprint: false,
             stream_tool_calls: None,
             laziness_detector: LazinessDetectorPerModelConfig::default(),
+            model_family: None,
+            fusion: None,
         };
         let info = ModelInfo::from_config(&entry);
         assert_eq!(info.agent_type, "codex");
@@ -6110,6 +6139,8 @@ reasoning_effort = "low"
                 show_model_fingerprint: false,
                 stream_tool_calls: None,
                 laziness_detector: LazinessDetectorPerModelConfig::default(),
+                model_family: None,
+                fusion: None,
             };
             let entry = ModelEntry::from_config_entry(&entry_cfg);
             let creds = ResolvedCredentials {
@@ -6207,6 +6238,137 @@ reasoning_effort = "low"
             .unwrap();
         assert_eq!(meta["supportsReasoningEffort"], true);
         assert!(meta.get("reasoningEffort").is_none());
+    }
+    #[test]
+    fn acp_model_meta_emits_model_family_only_when_present() {
+        let mut models = IndexMap::new();
+        let mut entry = test_model_entry("m", "https://test.api/v1", None, None, None);
+        entry.info.model_family = Some(kigi_models::ModelFamilyInfo {
+            id: "swe-2".to_string(),
+            name: "SWE-2".to_string(),
+            is_default: true,
+        });
+        models.insert("m".to_string(), entry);
+        let meta = to_acp_model_info(&models)
+            .values()
+            .next()
+            .unwrap()
+            .meta
+            .clone()
+            .unwrap();
+        assert_eq!(
+            meta["modelFamily"],
+            serde_json::json!({"id": "swe-2", "name": "SWE-2", "isDefault": true})
+        );
+
+        let mut plain = IndexMap::new();
+        plain.insert(
+            "p".to_string(),
+            test_model_entry("p", "https://t/v1", None, None, None),
+        );
+        let plain_meta = to_acp_model_info(&plain)
+            .values()
+            .next()
+            .unwrap()
+            .meta
+            .clone();
+        assert!(
+            plain_meta
+                .as_ref()
+                .and_then(|m| m.get("modelFamily"))
+                .is_none(),
+            "family-less models never emit modelFamily"
+        );
+    }
+    #[test]
+    fn model_entry_config_model_family_roundtrips_and_defaults_none() {
+        let json = serde_json::json!({
+            "model": "m", "base_url": "https://t/v1", "context_window": 200000,
+            "model_family": {"id": "swe-2", "name": "SWE-2", "isDefault": true}
+        });
+        let entry: ModelEntryConfig = serde_json::from_value(json).expect("with family");
+        let fam = entry.model_family.clone().expect("family preserved");
+        assert_eq!(
+            (fam.id.as_str(), fam.name.as_str(), fam.is_default),
+            ("swe-2", "SWE-2", true)
+        );
+        let reserialized = serde_json::to_value(&entry).expect("serialize");
+        assert_eq!(
+            reserialized["model_family"],
+            serde_json::json!({"id": "swe-2", "name": "SWE-2", "isDefault": true}),
+            "stored config re-emits the camelCase family shape"
+        );
+        let info = ModelInfo::from_config(&entry);
+        assert_eq!(
+            info.model_family.as_ref().map(|f| f.id.as_str()),
+            Some("swe-2")
+        );
+
+        let bare =
+            serde_json::json!({"model": "m", "base_url": "https://t/v1", "context_window": 200000});
+        let entry: ModelEntryConfig = serde_json::from_value(bare).expect("without family");
+        assert!(
+            entry.model_family.is_none(),
+            "absent field defaults to None"
+        );
+        assert!(ModelInfo::from_config(&entry).model_family.is_none());
+    }
+    #[test]
+    fn model_fusion_info_roundtrips_and_emits_acp_meta() {
+        let json = serde_json::json!({
+            "model": "m", "base_url": "https://t/v1", "context_window": 200000,
+            "fusion": {
+                "lead": "Claude Test Medium", "sidekick": "SWE Test Medium",
+                "leadModel": "claude-test-medium", "sidekickModel": "swe-test-medium"
+            }
+        });
+        let entry: ModelEntryConfig = serde_json::from_value(json).expect("with fusion");
+        let pair = entry.fusion.clone().expect("fusion preserved");
+        assert_eq!(
+            (
+                pair.lead.as_str(),
+                pair.sidekick.as_str(),
+                pair.lead_model.as_str(),
+                pair.sidekick_model.as_str()
+            ),
+            (
+                "Claude Test Medium",
+                "SWE Test Medium",
+                "claude-test-medium",
+                "swe-test-medium"
+            )
+        );
+        let info = ModelInfo::from_config(&entry);
+        assert_eq!(
+            info.fusion.as_ref().map(|f| f.sidekick_model.as_str()),
+            Some("swe-test-medium")
+        );
+
+        let mut models = IndexMap::new();
+        models.insert("devin/fusion-a-sidekick-b".to_string(), {
+            let mut e = ModelEntry::from_config_entry(&entry);
+            e.info.id = Some("devin/fusion-a-sidekick-b".to_string());
+            e
+        });
+        let meta = to_acp_model_info(&models)
+            .values()
+            .next()
+            .unwrap()
+            .meta
+            .clone()
+            .expect("meta");
+        assert_eq!(
+            meta["fusion"],
+            serde_json::json!({
+                "lead": "Claude Test Medium", "sidekick": "SWE Test Medium",
+                "leadModel": "claude-test-medium", "sidekickModel": "swe-test-medium"
+            })
+        );
+
+        let bare =
+            serde_json::json!({"model": "m", "base_url": "https://t/v1", "context_window": 200000});
+        let entry: ModelEntryConfig = serde_json::from_value(bare).expect("without fusion");
+        assert!(entry.fusion.is_none(), "absent field defaults to None");
     }
     #[test]
     fn acp_model_meta_emits_reasoning_efforts_and_derives_legacy() {
@@ -6609,6 +6771,8 @@ reasoning_effort = "low"
             show_model_fingerprint: false,
             stream_tool_calls: None,
             laziness_detector: LazinessDetectorPerModelConfig::default(),
+            model_family: None,
+            fusion: None,
         };
         let info = ModelInfo::from_config(&entry);
         assert_eq!(info.inference_idle_timeout_secs, Some(120));
@@ -9317,6 +9481,8 @@ default = "kigi-4.5"
                 laziness_detector: LazinessDetectorPerModelConfig::default(),
                 auto_compact_threshold_percent: None,
                 system_prompt_label: None,
+                model_family: None,
+                fusion: None,
             },
             api_key: None,
             env_key: None,

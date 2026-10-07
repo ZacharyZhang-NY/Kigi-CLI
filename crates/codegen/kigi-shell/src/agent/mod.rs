@@ -5,6 +5,7 @@ pub mod chat_modes;
 pub mod config;
 pub mod config_model_override_parse;
 pub mod custom_providers;
+pub(crate) mod devin_models;
 pub(crate) mod enrichment_fetch;
 mod ext_parsers;
 pub(crate) mod feedback_client;

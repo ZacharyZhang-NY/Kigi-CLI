@@ -49,6 +49,7 @@ pub enum SamplingConsumer {
     MessagesStream,
     /// `messages`: Anthropic Messages API non-streaming.
     Messages,
+    DevinStream,
 }
 
 impl SamplingConsumer {
@@ -64,6 +65,7 @@ impl SamplingConsumer {
             Self::Responses => "responses",
             Self::MessagesStream => "messages_stream",
             Self::Messages => "messages",
+            Self::DevinStream => "devin_stream",
         }
     }
 }

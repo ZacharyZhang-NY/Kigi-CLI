@@ -458,9 +458,97 @@ client-side, no backend surface.
     Copilot policy is unconfigured can list yet `403` at inference until the user
     enables it once in GitHub's UI — a deliberate omission (it mutates account
     state and is unverifiable without a live Copilot account), not a silent gap.
+  - `OAuthFlow::DevinPkce` → `auth::devin` (native Connect/protobuf provider).
+    Provider: `devin` (`scope_key oauth/devin`, inference base
+    `https://server.codeium.com`, `KIGI_DEVIN_BASE_URL` override,
+    `PlatformWireApi::Devin` / `ApiBackend::Devin` /
+    `ListingDialect::Devin`). LOGIN: PKCE S256 with an independent random
+    `state`, loopback `127.0.0.1:59653/callback` bound BEFORE the authorize
+    URL is published (ephemeral port only on AddrInUse or in tests); the
+    authorize query is EXACTLY `redirect_uri,state,prompt=select_account,
+    code_challenge,code_challenge_method` — the dialect carries no
+    client_id/response_type/scope. The manual-paste path accepts ONLY this
+    login's exact callback URL (`parse_devin_callback`: matching
+    scheme/host/port/path, no userinfo/fragment, exactly one `code` plus the
+    matching `state`; bare codes and `code#state` are rejected). Exchange
+    POSTs JSON `{code,code_verifier}`
+    to `api.devin.ai/auth/cli/token` for `{token}`: a SESSION token, NOT a
+    refresh token — `OAuthTokenBody::DevinSession` makes the generic
+    refresher return permanent failure with ZERO token-host HTTP (no fake
+    refresh); expiry/revocation means re-login. Opaque tokens carry no server
+    TTL (the 30-day Kigi fallback applies); JWT `exp` is honored when present.
+    WIRE (`kigi_sampling_types::devin`, pure, no I/O): minimal prost structs
+    over the `exa.*` schemas. Auth NEVER rides an HTTP header — the session
+    token is normalized once to `devin-session-token$…` and travels inside
+    `Metadata.api_key` (`disable_telemetry` always true; released-CLI identity
+    `devin-cli/chisel` `3000.11.3` for chat/auth, `chisel` `0.0.0-dev` for
+    discovery). Unary `GetUserJwt` mints a per-request user JWT (a
+    `custom_api_server_url` that differs from the configured base fails
+    CLOSED — configure the endpoint explicitly; enterprise reroute is
+    deferred), then `GetChatMessage` streams a Connect frame sequence
+    (`application/connect+proto`, flags 0x01 gzip / 0x02 end-stream) through a
+    redirect-NONE client with 16 MiB bounds on both wire and decompressed
+    payloads; an oversize advertisement fails before any payload byte is
+    staged, and bytes after the end trailer are a hard error, never success.
+    CATALOG: unary `GetCliModelConfigs` → `ClientModelConfig` rows
+    (nested `ModelInfo` wins context/capabilities; disabled, blank-uid,
+    router, and features-declared-no-tool-calls rows excluded; each concrete
+    UID stays separately selectable — no AssignModel, no effort collapsing).
+    FAMILIES ride `ClientModelConfig.model_family_metadata` (tag 30),
+    `is_default_model_in_family` (tag 31), and `ModelInfo.model_family_uid`
+    (tag 23) → `WireModel.model_family` → stored `ModelEntryConfig` /
+    `ModelInfo` → ACP `_meta.modelFamily` (`{id,name,isDefault}`; the TUI
+    consumes `kigi_shell::agent::config::ModelFamilyInfo`, re-exported, and
+    trusts the meta only on `devin/`-prefixed ids). The `/model` picker and
+    `kigi models` collapse multi-member families to one header row; family
+    name / `devin/<family.id>` / `devin/<family.name>` aliases resolve the
+    flagged default variant (first member when unflagged), while exact
+    concrete ids and full variant names always win. The Devin component of
+    the models disk-cache origin is suffixed `#model-families-fusion-v3` so
+    cached catalogs from before a catalog-shape change refetch. ROUTER rows
+    (the `fusion-…` pairs, `adaptive`) are served ONLY when the discovery
+    `Metadata` carries tag 30 = packed `[3,4,6,7,8]`, read off the released
+    CLI's own request on 2026-10-06; without it the server answers the 260
+    concrete models and `/fusion` stays hidden. FUSION rows (`fusion-<lead
+    uid>-sidekick-<helper uid>` routers) project in a second pass against
+    the eligible-concrete index — a pair row only materializes when BOTH
+    component uids survive the ordinary filters (a `-fast` lead segment
+    resolves the `-priority` concrete, the GPT speed-variant spelling) (never synthesized, never
+    disabled/malformed); it clones the lead's capabilities/context and
+    carries `WireModel.fusion` (`{lead,sidekick,leadModel,sidekickModel}`
+    → `_meta.fusion`). At sampling time a fusion uid runs
+    `AssignModel` (tag2 router uid, tag3 cascade id, tag5 latest USER
+    prompt) AFTER `GetUserJwt` — the returned `assignment_jwt` rides
+    `GetChatMessageRequest` tag 26 and the returned `model_uid` becomes
+    the chat uid (missing/blank/echoed-router assignments fail 502 with
+    no chat; JWTs are per-request, never persisted). A fixed Fusion
+    system paragraph is appended to the chat `prompt` naming the raw
+    lead/helper uids. Subagent routing: an unpinned child under a
+    `devin/` fusion parent resolves `devin/<sidekick_model>` through the
+    normal override path (existing pins/fork_context win; stale slug
+    guard `entry.info.model == live cfg.model` gates the lookup). TUI:
+    `/fusion` groups native pairs (meta `leadModel`/`sidekickModel`)
+    under one row per lead — Enter expands sidekicks — while `/model`
+    hides pair rows (exact `devin/fusion-…` ids still resolve);
+    `kigi models` lists them under the `Fusion (Devin)` family. The
+    helper-side loop is Kigi-local — it does not reproduce Devin's
+    sidekick prompts; the real helper dispatch shape is not confirmed by
+    the bounded mock probe (it may be feature-gated or fixture-artifact).
+    STREAMING: `DevinEventTranslator` emits Anthropic-Messages events so the
+    existing `stream_messages` L2 keeps reasoning/tool/usage/cancel/idle
+    semantics; `message_stop` only after a valid end trailer (error trailers
+    map the fixed Connect code vocabulary to status — anything else reads
+    `unrecognized`/502; EOF is never success). Usage buckets:
+    tag2 input(uncached), 3 output, 4 cache-write, 5 cache-read. REPLAYED
+    THINKING uses a `kigi-devin-v1:` JSON provenance envelope
+    (`pack_devin_signature`) — replayed only for a same-model final
+    open-tool-loop assistant; `prune_replayed_thinking` strips it from the
+    Messages wire, and the Responses builder drops it via its existing
+    foreign-item (empty-id) check. Out of scope for v1: hosted tools and
+    native JSON-schema responses (the StructuredOutput tool path covers it).
   These are INTERACTIVE login rows advertised right after `kimi-code`
   (`AuthMethodKind::OAuthPlatform`, in `PlatformId::ALL` order: `xai-grok`,
-  `claude-pro-max`, `github-copilot`, `openai-codex`). The catalog fetch resolves each such platform's OWN session
+  `claude-pro-max`, `github-copilot`, `openai-codex`, `devin`). The catalog fetch resolves each such platform's OWN session
   token (`resolve_generic_oauth_tokens`, refreshed on expiry) and routes
   `platform.oauth().is_some()` → `platform.base_url()` (kimi-code alone →
   `proxy_url()`). Tokens/codes/verifiers are NEVER logged.
@@ -641,3 +729,31 @@ client-side, no backend surface.
 - M2: server-side search/fetch (F5), command parity with kimi-cli 1.49.0
   (F6), one-time `~/.kimi/config.toml` import (F7), F9 smoke list, perf CI.
 - M3: GitHub Releases distribution, install scripts, self-update (F8).
+
+## Native Devin release smoke (5e4da82)
+
+The Linux x86_64 `v0.1.20-native-devin.1` release binary was exercised
+against an isolated loopback Connect/protobuf mock, without real account
+credentials. The workspace compiles clean: `cargo check --workspace
+--all-targets` and `cargo clippy --workspace --all-targets` pass with zero
+warnings. Catalog filtering and the explicitly authenticated
+ACP `devin` path completed a local `read_file` tool loop and streamed a final
+answer. The recorded assertions above remain mock-based; separately, the user
+has confirmed real Devin login and direct inference work interactively.
+
+Known issues observed in this release:
+- A profile containing only `oauth/devin` can discover its model catalog, but
+  headless `-p` exits with the Kimi-oriented "Not signed in" error before any
+  inference RPC. The eager/default authentication gate does not adopt the
+  provider's cached session.
+- The standalone `kigi login` command still runs Kimi Code login, not the
+  provider picker. Native Devin login is exposed by the built-in Kigi agent's
+  login picker / `/login`; do not describe `kigi login` as a Devin picker.
+- A session-title auxiliary request carried `kimi-for-coding` as its Devin
+  model UID even though that UID was absent from the mock account catalog.
+  Production acceptance of that UID has not been verified.
+- `kigi models` displays "You are not authenticated" with this Devin-only
+  profile even while successfully listing the authenticated Devin catalog.
+- A chat stream missing its Connect end trailer was retried and did not return
+  a final prompt result within the 45-second smoke-test window. No successful
+  completion was observed, but a bounded failure was not established.

@@ -508,6 +508,7 @@ mod tests {
             "openai-codex",
             "github-copilot",
             "xai-grok",
+            "devin",
         ] {
             let p = platform(id);
             assert!(
@@ -538,6 +539,7 @@ mod tests {
             "openai-codex",
             "github-copilot",
             "xai-grok",
+            "devin",
         ] {
             let p = platform(id);
             assert_eq!(
@@ -583,6 +585,7 @@ mod tests {
             "openai-codex",
             "github-copilot",
             "xai-grok",
+            "devin",
         ] {
             let p = platform(id);
             let resolved = auth
@@ -599,5 +602,28 @@ mod tests {
                 "{id} must never receive the primary Kimi bearer"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn devin_custom_base_url_moves_the_own_host_boundary() {
+        let _guard = kigi_env::EnvVarGuard::set(
+            kigi_models::DEVIN_BASE_URL_ENV,
+            "https://mock.devin.internal",
+        );
+        let (_d, kimi) = primary("kimi-tok");
+        let auth = authority(EndpointsConfig::default(), kimi);
+        let p = platform("devin");
+        assert_eq!(p.base_url(), "https://mock.devin.internal");
+        assert_eq!(
+            auth.credential_class(Some(p), "https://mock.devin.internal"),
+            CredentialClass::Pooled,
+            "the overridden host IS devin's own host"
+        );
+        assert_eq!(
+            auth.credential_class(Some(p), "https://server.codeium.com"),
+            CredentialClass::None,
+            "the default host is now OFF-host for devin"
+        );
+        drop(_guard);
     }
 }

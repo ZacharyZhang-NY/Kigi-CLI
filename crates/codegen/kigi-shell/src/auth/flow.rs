@@ -125,6 +125,9 @@ pub async fn run_oauth_provider_flow(
             )
             .await
         }
+        kigi_models::OAuthFlow::DevinPkce => {
+            crate::auth::devin::run_devin_login(oauth, auth_manager, &mut channels).await
+        }
     }
 }
 

@@ -93,6 +93,11 @@ impl TokenRefresher for GenericDeviceRefresher {
             );
             return RefreshOutcome::transient("no token with refresh_token available");
         };
+
+        if matches!(self.cfg.token_body, OAuthTokenBody::DevinSession) {
+            return RefreshOutcome::permanent(RefreshTokenFailedReason::Other, None);
+        }
+
         let Some(refresh_token) = auth.refresh_token.clone() else {
             tracing::warn!(
                 ?reason,
@@ -118,6 +123,9 @@ impl TokenRefresher for GenericDeviceRefresher {
             OAuthTokenBody::Json => oauth_pkce::refresh_token(self.cfg, &refresh_token).await,
             OAuthTokenBody::GithubCopilotExchange => {
                 github_copilot::remint_copilot_token(self.cfg, &refresh_token).await
+            }
+            OAuthTokenBody::DevinSession => {
+                return RefreshOutcome::permanent(RefreshTokenFailedReason::Other, None);
             }
         };
         match wire_result {
@@ -309,5 +317,37 @@ mod tests {
         };
         assert_eq!(error.reason, RefreshTokenFailedReason::RefreshTokenRejected);
         assert_eq!(rejected_refresh_token.as_deref(), Some("grok-rt-dead"));
+    }
+
+    #[tokio::test]
+    async fn devin_session_refresh_is_permanent_with_no_http() {
+        let server = MockServer::start().await;
+        let host: &'static str = Box::leak(server.uri().into_boxed_str());
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let stale = KimiAuth {
+            key: "devin-session-old".into(),
+            refresh_token: None,
+            expires_at: Some(Utc::now() - Duration::hours(1)),
+            expires_in: None,
+            ..KimiAuth::test_default()
+        };
+        let snap = FakeSnapshot::new(Some(stale.clone()), Some(stale));
+        let cfg: &'static OAuthConfig = Box::leak(Box::new(OAuthConfig {
+            token_host: host,
+            token_body: kigi_models::OAuthTokenBody::DevinSession,
+            ..kigi_models::DEVIN_OAUTH_CONFIG
+        }));
+        let refresher = GenericDeviceRefresher::new(snap, cfg);
+        let outcome = refresher.refresh(RefreshReason::PreRequest).await;
+        let RefreshOutcome::PermanentFailure { error, .. } = outcome else {
+            panic!("expected permanent failure, got {outcome:?}");
+        };
+        assert_eq!(error.reason, RefreshTokenFailedReason::Other);
+        let requests = server.received_requests().await.unwrap_or_default();
+        assert!(requests.is_empty(), "devin refresh must make NO HTTP call");
     }
 }

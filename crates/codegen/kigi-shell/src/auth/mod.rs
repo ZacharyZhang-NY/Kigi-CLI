@@ -4,6 +4,7 @@ pub(crate) mod credential_authority;
 pub mod credential_provider;
 pub(crate) mod device;
 pub mod device_code;
+pub(crate) mod devin;
 pub mod error;
 mod flow;
 pub(crate) mod github_copilot;

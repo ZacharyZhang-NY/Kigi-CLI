@@ -7,6 +7,7 @@
 //! (e.g., `kigi-chat-state`) without pulling in the full `kigi-shell`.
 
 pub mod conversation;
+pub mod devin;
 pub mod doom_loop;
 pub mod error;
 pub mod messages;

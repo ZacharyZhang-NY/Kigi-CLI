@@ -206,6 +206,7 @@ kigi-test-utils = { workspace = true }
 # clock with auto-advance) so interval-driven loop tests in `auth::refresh`
 # can assert exact tick counts deterministically without real-time sleep.
 tokio = { workspace = true, features = ["test-util"] }
+prost = { workspace = true }
 
 [dependencies.tempfile]
 workspace = true

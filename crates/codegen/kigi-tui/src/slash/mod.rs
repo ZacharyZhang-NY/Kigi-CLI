@@ -2627,4 +2627,257 @@ mod tests {
             "/terminal-check (alias) should be deduplicated in favor of canonical"
         );
     }
+
+    fn devin_family_state() -> ModelState {
+        let mut state = ModelState::default();
+        for (id, name, def) in [
+            ("devin/swe-2-high", "SWE-2 High", false),
+            ("devin/swe-2-medium", "SWE-2 Medium", true),
+            ("devin/swe-2-high-fast", "SWE-2 High Fast", false),
+        ] {
+            let mid = acp::ModelId::new(Arc::from(id));
+            let info = acp::ModelInfo::new(mid.clone(), name.to_string()).meta(
+                serde_json::json!({
+                    "modelFamily": {"id": "swe-2", "name": "SWE-2", "isDefault": def},
+                })
+                .as_object()
+                .cloned(),
+            );
+            state.available.insert(mid, info);
+        }
+        let mid = acp::ModelId::new(Arc::from("devin/opus-medium"));
+        let info = acp::ModelInfo::new(mid.clone(), "Claude Opus 5.5 Medium".to_string()).meta(
+            serde_json::json!({
+                "modelFamily": {"id": "claude-opus-5-5", "name": "Claude Opus 5.5", "isDefault": true},
+            })
+            .as_object()
+            .cloned(),
+        );
+        state.available.insert(mid, info);
+        let mid = acp::ModelId::new(Arc::from("devin/opus-max"));
+        let info = acp::ModelInfo::new(mid.clone(), "Claude Opus 5.5 Max".to_string()).meta(
+            serde_json::json!({
+                "modelFamily": {"id": "claude-opus-5-5", "name": "Claude Opus 5.5", "isDefault": false},
+            })
+            .as_object()
+            .cloned(),
+        );
+        state.available.insert(mid, info);
+        state
+    }
+
+    fn slash_displays(snap: &SlashSnapshot) -> Vec<String> {
+        snap.matches.iter().map(|r| r.display.clone()).collect()
+    }
+
+    fn slash_inserts(snap: &SlashSnapshot) -> Vec<String> {
+        snap.matches.iter().map(|r| r.insert_text.clone()).collect()
+    }
+
+    #[test]
+    fn model_family_root_row_then_terminal_variant_children() {
+        let mut ctrl = SlashController::new(
+            CommandRegistry::new(vec![Arc::new(commands::model::ModelCommand)]),
+            std::path::PathBuf::from("."),
+        );
+        let state = SlashState::default();
+        let models = devin_family_state();
+
+        ctrl.refresh(&state, "/model ", "/model ".len(), &models);
+        let snap = state.snapshot();
+        let displays = slash_displays(&snap);
+        assert_eq!(
+            displays,
+            vec!["SWE-2", "Claude Opus 5.5"],
+            "root phase: one row per multi-member devin family"
+        );
+        let swe_row = &snap.matches[0];
+        assert_eq!(swe_row.insert_text, "devin/swe-2 ");
+        assert!(
+            swe_row.insert_text.ends_with(' '),
+            "root row chains into the variant phase"
+        );
+
+        ctrl.refresh(
+            &state,
+            "/model devin/swe-2 ",
+            "/model devin/swe-2 ".len(),
+            &models,
+        );
+        let snap = state.snapshot();
+        let inserts: std::collections::HashSet<String> = slash_inserts(&snap).into_iter().collect();
+        assert_eq!(
+            inserts,
+            [
+                "devin/swe-2-high",
+                "devin/swe-2-medium",
+                "devin/swe-2-high-fast"
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+            "variant phase: every member as a terminal uid row"
+        );
+    }
+
+    #[test]
+    fn model_family_phase_tail_filters_variants_and_parent_aliases() {
+        let mut ctrl = SlashController::new(
+            CommandRegistry::new(vec![Arc::new(commands::model::ModelCommand)]),
+            std::path::PathBuf::from("."),
+        );
+        let state = SlashState::default();
+        let models = devin_family_state();
+
+        ctrl.refresh(
+            &state,
+            "/model devin/swe-2 high",
+            "/model devin/swe-2 high".len(),
+            &models,
+        );
+        let snap = state.snapshot();
+        let inserts: std::collections::HashSet<String> = slash_inserts(&snap).into_iter().collect();
+        assert_eq!(
+            inserts,
+            ["devin/swe-2-high", "devin/swe-2-high-fast"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            "tail token filters variants; Medium must not appear"
+        );
+
+        ctrl.refresh(
+            &state,
+            "/model devin/SWE-2 ",
+            "/model devin/SWE-2 ".len(),
+            &models,
+        );
+        let snap = state.snapshot();
+        assert_eq!(
+            slash_inserts(&snap).len(),
+            3,
+            "devin/<family.name> also enters the phase"
+        );
+
+        ctrl.refresh(
+            &state,
+            "/model devin/Claude Opus 5.5 m",
+            "/model devin/Claude Opus 5.5 m".len(),
+            &models,
+        );
+        let snap = state.snapshot();
+        let inserts = slash_inserts(&snap);
+        assert!(
+            inserts.iter().any(|i| i == "devin/opus-medium"),
+            "human family token + tail reaches the Medium child: {inserts:?}"
+        );
+    }
+
+    fn devin_fusion_state() -> ModelState {
+        let mut state = devin_family_state();
+        let mk = |pair_uid: &str, lead: &str, sidekick: &str, lead_m: &str, side_m: &str| {
+            let mid = acp::ModelId::new(Arc::from(format!("devin/{pair_uid}")));
+            let info = acp::ModelInfo::new(mid.clone(), format!("Fusion ({lead} + {sidekick})"))
+                .meta(
+                    serde_json::json!({
+                        "fusion": {
+                            "lead": lead, "sidekick": sidekick,
+                            "leadModel": lead_m, "sidekickModel": side_m,
+                        },
+                    })
+                    .as_object()
+                    .cloned(),
+                );
+            (mid, info)
+        };
+        for (mid, info) in [
+            mk("fusion-l1-sidekick-h1", "L1", "H1", "l1", "h1"),
+            mk("fusion-l1-sidekick-h2", "L1", "H2", "l1", "h2"),
+            mk("fusion-l2-sidekick-h1", "L2", "H1", "l2", "h1"),
+        ] {
+            state.available.insert(mid, info);
+        }
+        state
+    }
+
+    #[test]
+    fn model_menu_hides_native_fusion_pairs_but_keeps_foreign() {
+        let mut ctrl = SlashController::new(
+            CommandRegistry::new(vec![Arc::new(commands::model::ModelCommand)]),
+            std::path::PathBuf::from("."),
+        );
+        let state = SlashState::default();
+        let mut models = devin_fusion_state();
+        let foreign = acp::ModelId::new(Arc::from("fusion-x-y"));
+        models.available.insert(
+            foreign.clone(),
+            acp::ModelInfo::new(foreign.clone(), "Fusion (X + Y)".to_string()).meta(
+                serde_json::json!({"fusion": {"lead": "X", "sidekick": "Y"}})
+                    .as_object()
+                    .cloned(),
+            ),
+        );
+        ctrl.refresh(&state, "/model ", "/model ".len(), &models);
+        let snap = state.snapshot();
+        let inserts = slash_inserts(&snap);
+        assert!(
+            !inserts.iter().any(|i| i.contains("fusion-")),
+            "native fusion pairs hidden from /model: {inserts:?}"
+        );
+        assert!(
+            inserts.iter().any(|i| i == "Fusion (X + Y)"),
+            "foreign fusion pair stays in /model: {inserts:?}"
+        );
+    }
+
+    #[test]
+    fn fusion_menu_groups_native_pairs_by_lead_then_pairs() {
+        let mut ctrl = SlashController::new(
+            CommandRegistry::new(vec![Arc::new(commands::fusion::FusionCommand)]),
+            std::path::PathBuf::from("."),
+        );
+        let state = SlashState::default();
+        let models = devin_fusion_state();
+
+        ctrl.refresh(&state, "/fusion ", "/fusion ".len(), &models);
+        let snap = state.snapshot();
+        let native_roots: Vec<&str> = snap
+            .matches
+            .iter()
+            .filter(|r| r.insert_text.ends_with(' '))
+            .map(|r| r.display.as_str())
+            .collect();
+        assert_eq!(native_roots, vec!["L1", "L2"], "one root per lead uid");
+
+        ctrl.refresh(
+            &state,
+            "/fusion devin/l1 ",
+            "/fusion devin/l1 ".len(),
+            &models,
+        );
+        let snap = state.snapshot();
+        let inserts: std::collections::HashSet<String> = slash_inserts(&snap).into_iter().collect();
+        assert_eq!(
+            inserts,
+            ["devin/fusion-l1-sidekick-h1", "devin/fusion-l1-sidekick-h2"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            "child rows insert the real pair uids"
+        );
+
+        ctrl.refresh(
+            &state,
+            "/fusion devin/l1 h2",
+            "/fusion devin/l1 h2".len(),
+            &models,
+        );
+        let snap = state.snapshot();
+        let inserts = slash_inserts(&snap);
+        assert_eq!(
+            inserts,
+            vec!["devin/fusion-l1-sidekick-h2"],
+            "tail filters helpers"
+        );
+    }
 }

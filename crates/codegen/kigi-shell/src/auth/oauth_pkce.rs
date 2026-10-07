@@ -405,6 +405,14 @@ pub(crate) async fn await_loopback_code(
         .await
         .with_context(|| format!("could not bind loopback 127.0.0.1:{redirect_port}"))?;
     tracing::info!(port = redirect_port, "auth: pkce loopback listener bound");
+    await_loopback_code_on(&listener, redirect_path, expected_state).await
+}
+
+pub(crate) async fn await_loopback_code_on(
+    listener: &tokio::net::TcpListener,
+    redirect_path: &str,
+    expected_state: &str,
+) -> anyhow::Result<String> {
     loop {
         let (stream, _peer) = listener.accept().await.context("loopback accept failed")?;
         match handle_loopback_conn(stream, redirect_path, expected_state).await {
